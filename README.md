@@ -1,101 +1,103 @@
 # bspwm
 
-fork of baskerville/bspwm: edge snapping and magnetic edges, rule matching by property and regex, and fewer X11 round-trips.
+**bspwm** is a *tiling window manager* for Linux. Instead of letting windows pile up on top of each other, it arranges them side by side so they fill the screen without overlapping. You control everything from the keyboard.
 
-## overview
+This is a fork of [baskerville/bspwm](https://github.com/baskerville/bspwm) with a few extra features and fixes. It works on **X11 only** (the experimental Wayland support has been removed).
 
-binary tree tiling window manager. socket IPC with bspc client. uses sxhkd for keybindings, with built-in `bspc keybind` also available.
+## What you get
 
-## changes from upstream
+- **Tiling:** open a window and the screen is split automatically. Close one and the rest grow to fill the space.
+- **Keyboard control:** a small tool called `bspc` tells bspwm what to do (move a window, switch desktop, and so on). Pair it with `sxhkd` to bind those commands to keys.
+- **Fully scriptable:** every action is a `bspc` command, so you can put it in scripts.
 
-the experimental wlroots Wayland backend has been removed; this tree targets X11 only.
+## What this fork adds
 
-### window management
+| Feature | What it does |
+| --- | --- |
+| **Edge snapping** | Drag a window to a screen edge or corner and it snaps into place, like on Windows. Turn it on with `bspc config edge_snap_enabled true`. |
+| **Magnetic edges** | Floating windows stick to screen edges and to other windows as you drag them. Adjust with `bspc config magnet_threshold 20`. |
+| **Tile limit** | Cap how many tiled windows one desktop can hold (`tile_limit_enabled`, `max_tiles_per_desktop`). |
+| **Smarter window rules** | Match windows by name, class or other properties, including patterns. For example, make every Firefox-like window float: `bspc rule -a 'class~=^Fire/i' state=floating` |
+| **Freeze monitor layout** | Stop bspwm reacting when monitors are plugged in or out (`ignore_monitor_updates`). |
 
-- edge snapping: drag a window to a screen edge or corner, or `bspc node -S|--snap ZONE`
-  (`edge_snap_enabled`, `edge_snap_threshold`)
-- magnetic edges: dragged floating windows stick to work-area and window edges (`magnet_threshold`)
-- per-desktop tile limit (`tile_limit_enabled`, `max_tiles_per_desktop`)
-- rules match on `class`, `instance`, `name` and other properties, as regex with `~=`
-  and case-insensitively with `/i`: `bspc rule -a 'class~=^Fire/i' state=floating`
-- `ignore_monitor_updates` / `-i` freeze the monitor layout
-- the control socket and state file live in `$XDG_RUNTIME_DIR`
+## What this fork fixes
 
-### fixes to upstream behaviour
+Safety and reliability problems in the original:
 
-- **state restore** (`bspc wm -l`, `bspwm -r`): upstream sized the copy of monitor, desktop and
-  node names from the JSON token length, so a long name overflowed `char[256]`. names are now
-  clamped and token indices bounds-checked. JSON nesting is capped at 1024. the file must be a
-  regular file or FIFO owned by the caller, at most 1 MiB
-- **control socket**: a client that connected and sent nothing stalled the WM. requests are now
-  read without blocking, so a stalled client is dropped after 2 s and blocks no one. requests
-  are no longer cut at 8 KB (up to 1 MiB). the socket is mode 0600 with a `SO_PEERCRED` uid
-  check, and bspwm won't take over a live instance's socket
-- **argument parsing**: numbers in commands and settings must be whole integers in range
-  (`window_gap 10abc`, `border_width -1`, ids above 32 bits are errors instead of being
-  truncated or wrapped). `parse_degree` / `parse_rectangle` are range-checked. rules reject
-  over-long consequences instead of truncating them
-- **allocation**: NULL checks where upstream used `calloc` results directly (node and client
-  creation, ewmh, restart argv)
-- **geometry**: `rect_cmp` no longer truncates an unsigned area difference to `int`, and
-  `adapt_geometry` uses 64-bit intermediates
+- **Restarting no longer risks a crash.** Very long window or desktop names used to overflow a buffer when bspwm reloaded its saved state.
+- **A stuck program can't freeze bspwm.** If something connects to bspwm and then says nothing, it is dropped after 2 seconds instead of blocking everything.
+- **Only you can control your bspwm.** The control socket is private to your user account.
+- **Bad input is rejected.** A typo like `window_gap 10abc` or `border_width -1` now gives an error instead of being half-understood.
+- **Fewer round-trips to the display server.** On your own computer you will not notice a difference. It helps only when running over a slow remote connection.
 
-### build
+## Install
 
-`-std=c23 -O2 -D_FORTIFY_SOURCE=3 -fstack-protector-strong -fstack-clash-protection -fcf-protection`,
-full RELRO, warning-free under `-Wall -Wextra -Wformat=2 -Wvla -Wnull-dereference`.
+### 1. Get the dependencies
 
-### X11 pipelining
+You need these libraries (and their development headers):
 
-reduced X11 round-trips in rule application (6→1) and client initialization (4→1). benefit depends on X11 latency:
+`libxcb`, `xcb-util`, `xcb-util-keysyms`, `xcb-util-wm`, `libxkbcommon`
 
-- **localhost**: ~10μs per round-trip, pipelining saves ~50μs (not measurable)
-- **remote X11**: ~500μs per round-trip, pipelining saves ~2-4ms per window
+You also need a recent C compiler (GCC 13 or newer, or clang 18 or newer).
 
-### benchmark results (localhost, 100 iterations)
-
-```
-                      upstream    current
-command latency:         4 μs       4 μs
-window create+map:    1634 μs    1637 μs
-```
-
-single run against a bspwm 0.9.12 binary; it measures X11/IPC round-trips.
-
-## benchmarking
-
-actual X11 latency comparison (requires Xvfb):
+### 2. Build and install
 
 ```bash
-cd benches
-./compare_latency.sh [iterations]
+make
+sudo make install
 ```
 
-measures real IPC round-trip and window creation latency. this is what matters.
+To remove it later: `sudo make uninstall`.
 
-CPU cycle microbenchmarks exist in `benches/microbench.c` but are UX-irrelevant. 4000 cycles = 1.3μs. one X11 round-trip = 500μs.
+On Arch Linux, a package recipe is included at `pkg/arch/PKGBUILD`.
 
-## build
+## Getting started
+
+1. **Copy the example settings** into your home folder:
+
+   ```bash
+   make install_cfg
+   ```
+
+   This puts a starter `bspwmrc` in `~/.config/bspwm/` and a starter `sxhkdrc` (your key bindings) in `~/.config/sxhkd/`.
+
+2. **Start bspwm.** Either pick **bspwm** from your login screen, or, if you start X by hand, put this line at the end of `~/.xinitrc`:
+
+   ```bash
+   exec bspwm
+   ```
+
+   The starter `bspwmrc` launches `sxhkd` (the key-binding program) for you, so you don't need to start it yourself.
+
+3. **Use it.** The key bindings live in `~/.config/sxhkd/sxhkdrc`, so open that file to see (and change) them.
+
+### Handy commands
 
 ```bash
-make                  # build bspwm and bspc
-make install          # installs binaries, man pages, docs and the xsessions entry
+bspc node -c                          # close the focused window
+bspc node -t floating                 # make the focused window float
+bspc config window_gap 12             # set the gap between windows
+bspc wm -r                            # restart bspwm
+bspc quit                             # log out of bspwm
 ```
 
-`bspc` links no display library. objects live under `build/x11/`.
+## Configuration
 
-dependencies: libxcb, xcb-util, xcb-util-keysyms, xcb-util-wm, libxkbcommon
+| What | Where |
+| --- | --- |
+| Main settings (run at startup) | `~/.config/bspwm/bspwmrc` |
+| Key bindings | `~/.config/sxhkd/sxhkdrc` |
+| Ready-made examples | the `examples/` folder |
+| Full documentation | `man bspwm` and `man bspc` |
 
-arch package: `pkg/arch/PKGBUILD` (bspwm1)
+If `XDG_CONFIG_HOME` is set, use that folder instead of `~/.config`.
 
-binary size: 285KB (+34KB / +13% vs upstream 0.9.12)
+## Help and development
 
-## configuration
+- To see how it all works, read the manual pages: `man bspwm` and `man bspc`.
+- Developers: tests live in `tests/` (`make test`), and speed comparisons live in `benches/`. See `doc/CONTRIBUTING.md` before sending changes.
+- Version history: `doc/CHANGELOG.md`.
 
-config: `$XDG_CONFIG_HOME/bspwm/bspwmrc`
-keybindings: sxhkd
-examples: `examples/`
+## License
 
-## license
-
-BSD-2-Clause
+BSD-2-Clause. See the `LICENSE` file.

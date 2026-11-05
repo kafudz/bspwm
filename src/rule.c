@@ -261,7 +261,7 @@ event_queue_t *make_event_queue(void *evt)
     event_queue_t *eq = calloc(1, sizeof(event_queue_t));
     if (!eq) return NULL;
 
-    /* Copy up to 64 bytes of event data (fits any backend event) */
+    /* Copy up to 64 bytes of event data (fits an xcb event) */
     memcpy(eq->data, evt, sizeof(eq->data));
 
     eq->prev = eq->next = NULL;

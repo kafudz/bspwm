@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/epoll.h>
 #include <string.h>
@@ -519,22 +520,36 @@ bool schedule_rules(bspwm_wid_t win, rule_consequence_t *csq)
 	if (pipe(fds) == -1) {
 		return false;
 	}
+	/* Neither end may leak into other children (later rule commands, the
+	 * config script, hotkey commands): a stray copy of the write end would
+	 * keep the pipe open and a stray copy of the read end would pin it. The
+	 * child's dup2() onto fd 1 gives it a copy without the flag. */
+	fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+	fcntl(fds[1], F_SETFD, FD_CLOEXEC);
 	pid_t pid = fork();
 	if (pid == 0) {
 		int dpy_fd = backend_get_fd();
 		if (dpy_fd >= 0) {
 			close(dpy_fd);
 		}
-		dup2(fds[1], 1);
-		close(fds[0]);
+		if (fds[1] == STDOUT_FILENO) {
+			/* dup2() onto itself is a no-op and would keep FD_CLOEXEC. */
+			fcntl(fds[1], F_SETFD, 0);
+		} else {
+			dup2(fds[1], STDOUT_FILENO);
+		}
 		char wid[SMALEN];
-		char *csq_buf;
+		char *csq_buf = NULL;
 		print_rule_consequence(&csq_buf, csq);
 		snprintf(wid, sizeof(wid), "%i", win);
 		setsid();
-		execl(external_rules_command, external_rules_command, wid, csq->class_name, csq->instance_name, csq_buf, NULL);
-		free(csq_buf);
-		err("Couldn't spawn rule command.\n");
+		execl(external_rules_command, external_rules_command, wid, csq->class_name, csq->instance_name,
+		      csq_buf != NULL ? csq_buf : "", (char *) NULL);
+		/* This is a forked copy of the window manager: leave with _exit() so
+		 * the parent's atexit handlers don't run and its buffered stdio isn't
+		 * flushed a second time. */
+		warn("Couldn't spawn rule command.\n");
+		_exit(127);
 	} else if (pid > 0) {
 		close(fds[1]);
 		pending_rule_t *pr = make_pending_rule(fds[0], win, csq);

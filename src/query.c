@@ -526,11 +526,7 @@ void print_rule_consequence(char **buf, rule_consequence_t *csq)
 	
 	char *rect_buf = NULL;
 	print_rectangle(&rect_buf, csq->rect);
-	if (!rect_buf) {
-		rect_buf = malloc(1);
-		if (rect_buf)
-			*rect_buf = '\0';
-	}
+	/* rect_buf stays NULL when there is no rectangle; it is printed as "" below. */
 
 	int ret = asprintf(buf, "monitor=%s desktop=%s node=%s state=%s layer=%s honor_size_hints=%s "
 	                   "split_dir=%s split_ratio=%lf hidden=%s sticky=%s private=%s locked=%s "

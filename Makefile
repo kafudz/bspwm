@@ -1,8 +1,22 @@
 VERCMD  ?= git describe --tags 2> /dev/null
 VERSION := $(shell $(VERCMD) || cat VERSION)
 
+# Expands to its argument when $(CC) accepts it. -Werror makes a compiler that
+# only warns about an unknown option (clang) count as rejecting it.
+cc-option = $(shell printf 'int main(void){return 0;}\n' | $(CC) -Werror $(1) -x c -c -o /dev/null - >/dev/null 2>&1 && echo $(1))
+
+# C23 is spelled -std=c2x before GCC 14 (Ubuntu 24.04 ships GCC 13). Override
+# with STD=... if needed.
+ifndef STD
+STD := $(firstword $(foreach s,c23 c2x,$(if $(call cc-option,-std=$(s)),$(s))) c2x)
+endif
+
+# Hardening flags that not every compiler or target supports (-fcf-protection
+# is x86-only, for instance); take the ones this $(CC) accepts.
+HARDEN := $(foreach f,-fstack-clash-protection -fcf-protection -Wformat-overflow=2 -Wformat-truncation=2 -Wstack-protector,$(call cc-option,$(f)))
+
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L -DVERSION=\"$(VERSION)\"
-CFLAGS   += -std=c23 -pedantic -Wall -Wextra -Wvla -Wformat=2 -Wformat-overflow=2 -Wformat-truncation=2 -Wnull-dereference -Wstack-protector -fstack-protector-strong -fstack-clash-protection -fcf-protection -O2 -D_FORTIFY_SOURCE=3 -DJSMN_STRICT
+CFLAGS   += -std=$(STD) -pedantic -Wall -Wextra -Wvla -Wformat=2 -Wnull-dereference -fstack-protector-strong $(HARDEN) -O2 -D_FORTIFY_SOURCE=3 -DJSMN_STRICT
 
 # Core sources — display-server independent
 CORE_SRC = bspwm.c helpers.c geometry.c jsmn.c settings.c monitor.c desktop.c tree.c stack.c history.c \

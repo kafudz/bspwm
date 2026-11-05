@@ -274,7 +274,8 @@ int main(int argc, char *argv[])
 		    socket_path_len, sizeof(sock_address.sun_path), socket_path);
 	}
 
-	strcpy(sock_address.sun_path, socket_path);
+	/* The length was checked against sun_path above. */
+	memcpy(sock_address.sun_path, socket_path, socket_path_len + 1);
 
 	/* Always bind a fresh socket, on both a fresh start and a restart.
 	 *
@@ -383,7 +384,7 @@ int main(int argc, char *argv[])
 	ep_ev.data.fd = dpy_fd;
 	epoll_ctl(epoll_fd, EPOLL_CTL_ADD, dpy_fd, &ep_ev);
 
-	struct sigaction sigact;
+	struct sigaction sigact = {0};
 	sigact.sa_handler = sig_handler;
 	sigemptyset(&sigact.sa_mask);
 	sigact.sa_flags = SA_RESTART;

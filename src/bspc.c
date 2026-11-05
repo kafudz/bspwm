@@ -254,9 +254,27 @@ int main(int argc, char *argv[])
 		{STDOUT_FILENO, POLLHUP, 0},
 	};
 
-	while (poll(fds, 2, -1) > 0) {
+	while (true) {
+		if (poll(fds, 2, -1) < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			break;
+		}
+		if (!(fds[0].revents & POLLIN) &&
+		    (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL))) {
+			/* Nothing left to read and the socket is done or broken; without
+			 * this the loop would spin, because poll() keeps reporting it. */
+			if (fds[0].revents & (POLLERR | POLLNVAL)) {
+				ret = EXIT_FAILURE;
+			}
+			break;
+		}
 		if (fds[0].revents & POLLIN) {
-			if ((nb = recv(sock_fd, rsp, sizeof(rsp)-1, 0)) > 0) {
+			if ((nb = recv(sock_fd, rsp, sizeof(rsp)-1, 0)) < 0 && errno == EINTR) {
+				continue;
+			}
+			if (nb > 0) {
 				rsp[nb] = '\0';
 				if (rsp[0] == FAILURE_MESSAGE[0]) {
 					ret = EXIT_FAILURE;

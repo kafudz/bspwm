@@ -93,7 +93,10 @@ void run_config(int run_level)
 		char arg1[12];  /* enough for INT_MIN */
 		snprintf(arg1, sizeof(arg1), "%i", run_level);
 		execl(config_path, config_path, arg1, (char *) NULL);
-		err("Couldn't execute the configuration file.\n");
+		/* Forked copy of the window manager: _exit() so its atexit handlers
+		 * and buffered stdio are not run a second time. */
+		warn("Couldn't execute the configuration file.\n");
+		_exit(127);
 	}
 }
 

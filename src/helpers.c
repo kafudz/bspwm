@@ -320,16 +320,21 @@ int vasprintf(char **buf, const char *fmt, va_list args)
 	va_end(tmp);
 
 	if (size < 0) {
+		*buf = NULL;
 		return -1;
 	}
 
-	*buf = malloc(size + 1);
+	*buf = malloc((size_t) size + 1);
 
 	if (*buf == NULL) {
 		return -1;
 	}
 
-	size = vsprintf(*buf, fmt, args);
+	size = vsnprintf(*buf, (size_t) size + 1, fmt, args);
+	if (size < 0) {
+		free(*buf);
+		*buf = NULL;
+	}
 	return size;
 }
 

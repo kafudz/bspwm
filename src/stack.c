@@ -47,18 +47,21 @@ void stack_insert_after(stacking_list_t *a, node_t *n)
 {
 	if (!n)
 		return;
-		
+
+	/* remove_stack_node() below frees every entry in n's subtree, not just
+	 * n's own. If the anchor is one of them it would be freed and then read
+	 * through a->next. Callers pass leaves, where this is the same as
+	 * a->node == n, but the guard keeps that from being load-bearing. */
+	if (a && is_descendant(a->node, n))
+		return;
+
 	stacking_list_t *s = make_stack(n);
 	if (!s)
 		return;
-		
+
 	if (!a) {
 		stack_head = stack_tail = s;
 	} else {
-		if (a->node == n) {
-			free(s);
-			return;
-		}
 		remove_stack_node(n);
 		stacking_list_t *b = a->next;
 		if (b)
@@ -75,18 +78,18 @@ void stack_insert_before(stacking_list_t *a, node_t *n)
 {
 	if (!n)
 		return;
-		
+
+	/* See stack_insert_after(): the anchor must survive remove_stack_node(). */
+	if (a && is_descendant(a->node, n))
+		return;
+
 	stacking_list_t *s = make_stack(n);
 	if (!s)
 		return;
-		
+
 	if (!a) {
 		stack_head = stack_tail = s;
 	} else {
-		if (a->node == n) {
-			free(s);
-			return;
-		}
 		remove_stack_node(n);
 		stacking_list_t *b = a->prev;
 		if (b)

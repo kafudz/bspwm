@@ -253,9 +253,12 @@ bool parse_degree(char *s, int *d)
    char *end;
    errno = 0;
    long parsed = strtol(s, &end, 10);
-   if (end == s || *end != '\0') {
+   if (errno != 0 || end == s || *end != '\0') {
        return false;
    }
+   /* Rotation angles are normalised, but the raw value must still be a
+    * representable long: overflow is a malformed argument, not "angle mod
+    * 360". The modulo result is always in [0, 360), so the cast is safe. */
    int i = (int)(((parsed % 360) + 360) % 360);
 
    if (valid_degrees[i]) {
@@ -287,6 +290,21 @@ bool parse_int(const char *s, long min, long max, int *v)
 		return false;
 	}
 	*v = (int) l;
+	return true;
+}
+
+/* Strict floating-point parse: the whole string must be a number in range.
+ * Rejects trailing junk (which sscanf silently ignored) and NaN/infinity
+ * (the comparisons are false for NaN). */
+bool parse_double(const char *s, double min, double max, double *v)
+{
+	char *end;
+	errno = 0;
+	double d = strtod(s, &end);
+	if (errno != 0 || end == s || *end != '\0' || !(d >= min && d <= max)) {
+		return false;
+	}
+	*v = d;
 	return true;
 }
 

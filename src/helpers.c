@@ -31,8 +31,25 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <errno.h>
+#include <poll.h>
+#include <time.h>
 #include "bspwm.h"
 #include "common.h"
+
+/* Largest gap between chunks read from a FIFO before giving up, and the
+ * total time such a read may occupy the event loop. */
+#define READ_STRING_TIMEOUT_MS   5000
+#define READ_STRING_DEADLINE_MS  30000
+
+static long long monotonic_ms(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
+        return -1;
+    }
+    return (long long) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 /* Mark as cold - rarely executed, improves instruction cache (nomt-style) */
 __attribute__((cold))
@@ -88,7 +105,9 @@ char *read_string(const char *file_path, size_t *tlen)
         return NULL;
     }
 
-    int fd = open(file_path, O_RDONLY);
+    /* O_NONBLOCK keeps open() from blocking forever on a FIFO with no
+     * writer. Regular files ignore it. */
+    int fd = open(file_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
     if (fd == -1) {
         perror("Read file: open");
         return NULL;
@@ -123,58 +142,97 @@ char *read_string(const char *file_path, size_t *tlen)
         return NULL;
     }
 
-    int nb;
     *tlen = 0;
 
-    while (true) {
-        nb = read(fd, buf, sizeof(buf));
-        if (nb < 0) {
-            perror("Read file: read");
-            free(content);
-            close(fd);
-            return NULL;
-        } else if (nb == 0) {
-            break;
-        } else {
-            *tlen += nb;
+    /* A FIFO writer that trickles data could otherwise extend the read
+     * indefinitely; the absolute deadline bounds the whole operation. */
+    long long deadline = monotonic_ms();
+    if (deadline >= 0) {
+        deadline += READ_STRING_DEADLINE_MS;
+    }
 
-            if (*tlen > MAX_STRING_SIZE) {
-                warn("Content too large while reading\n");
+    while (true) {
+        /* A FIFO can stay open with no data forever; waiting with a bound
+         * keeps `bspc wm -l <fifo>` from freezing the whole WM event loop.
+         * Regular files are always ready and need no poll. */
+        if (S_ISFIFO(st.st_mode)) {
+            int timeout = READ_STRING_TIMEOUT_MS;
+            long long now = monotonic_ms();
+            if (deadline >= 0 && now >= 0) {
+                long long remaining = deadline - now;
+                if (remaining <= 0) {
+                    warn("Timed out reading '%s'.\n", file_path);
+                    free(content);
+                    close(fd);
+                    return NULL;
+                }
+                if (remaining < timeout) {
+                    timeout = (int) remaining;
+                }
+            }
+            struct pollfd pfd = {.fd = fd, .events = POLLIN};
+            int pr;
+            do {
+                pr = poll(&pfd, 1, timeout);
+            } while (pr == -1 && errno == EINTR);
+            if (pr == 0) {
+                warn("Timed out reading '%s'.\n", file_path);
                 free(content);
                 close(fd);
                 return NULL;
             }
-
-            if (*tlen > len) {
-                len *= 2;
-                if (len > MAX_STRING_SIZE) {
-                    len = MAX_STRING_SIZE + 1;
-                }
-                char *rcontent = realloc(content, len * sizeof(char));
-                if (rcontent == NULL) {
-                    perror("Read file: realloc");
-                    free(content);
-                    close(fd);
-                    return NULL;
-                } else {
-                    content = rcontent;
-                }
+            if (pr == -1) {
+                perror("Read file: poll");
+                free(content);
+                close(fd);
+                return NULL;
             }
-            memcpy(content + (*tlen - nb), buf, nb);
         }
+
+        ssize_t nb = read(fd, buf, sizeof(buf));
+        if (nb < 0) {
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            }
+            perror("Read file: read");
+            free(content);
+            close(fd);
+            return NULL;
+        }
+        if (nb == 0) {
+            break;
+        }
+
+        size_t need = *tlen + (size_t) nb + 1; /* + terminating NUL */
+        if (need > MAX_STRING_SIZE + 1) {
+            warn("Content too large while reading\n");
+            free(content);
+            close(fd);
+            return NULL;
+        }
+        if (need > len) {
+            size_t new_len = len;
+            while (new_len < need) {
+                new_len *= 2;
+            }
+            if (new_len > MAX_STRING_SIZE + 1) {
+                new_len = MAX_STRING_SIZE + 1;
+            }
+            char *rcontent = realloc(content, new_len * sizeof(char));
+            if (rcontent == NULL) {
+                perror("Read file: realloc");
+                free(content);
+                close(fd);
+                return NULL;
+            }
+            content = rcontent;
+            len = new_len;
+        }
+        memcpy(content + *tlen, buf, nb);
+        *tlen += (size_t) nb;
     }
 
     close(fd);
-
-    if (*tlen >= len) {
-        char *rcontent = realloc(content, (*tlen + 1) * sizeof(char));
-        if (rcontent == NULL) {
-            perror("Read file: realloc");
-            free(content);
-            return NULL;
-        }
-        content = rcontent;
-    }
     content[*tlen] = '\0';
 
     return content;
@@ -226,7 +284,18 @@ char *mktempfifo(const char *template)
 	close(tempfd);
 	unlink(fifo_path);
 
-	if (mkfifo(fifo_path, 0666) == -1) {
+	if (mkfifo(fifo_path, 0600) == -1) {
+		free(fifo_path);
+		return NULL;
+	}
+
+	/* mkfifo() cannot use O_EXCL: another process could have won the name
+	 * between the unlink and the call. Verify what we ended up with before
+	 * handing the path to a subscriber. */
+	struct stat st;
+	if (lstat(fifo_path, &st) == -1 || !S_ISFIFO(st.st_mode) ||
+	    st.st_uid != getuid()) {
+		unlink(fifo_path);
 		free(fifo_path);
 		return NULL;
 	}

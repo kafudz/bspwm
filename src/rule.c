@@ -245,6 +245,12 @@ void remove_pending_rule(pending_rule_t *pr)
 void postpone_event(pending_rule_t *pr, void *evt)
 {
 	event_queue_t *eq = make_event_queue(evt);
+	/* Allocation failure must not crash the WM: dropping the event only
+	 * delays (or skips) a pending rule, while a NULL dereference here would
+	 * take the whole session down. */
+	if (eq == NULL) {
+		return;
+	}
 	if (pr->event_tail == NULL) {
 		pr->event_head = pr->event_tail = eq;
 	} else {
@@ -614,7 +620,7 @@ static void csq_set_layer(char *value, rule_consequence_t *csq)
 static void csq_set_split_ratio(char *value, rule_consequence_t *csq)
 {
 	double rat;
-	if (sscanf(value, "%lf", &rat) == 1 && rat > 0 && rat < 1) {
+	if (parse_double(value, 0.0, 1.0, &rat) && rat > 0.0 && rat < 1.0) {
 		csq->split_ratio = rat;
 	}
 }

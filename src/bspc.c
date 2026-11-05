@@ -220,10 +220,14 @@ int main(int argc, char *argv[])
 		msg_size += arg_len;
 	}
 
-	if (msg_size > IPC_MAX_MSG) {
+	/* The server reserves one byte for the terminating NUL inside its
+	 * IPC_MAX_MSG buffer, so the largest request it can accept is
+	 * IPC_MAX_MSG - 1 bytes (including that NUL). Reject exactly at the
+	 * limit instead of letting the server drop the connection. */
+	if (msg_size >= IPC_MAX_MSG) {
 		free(msg);
 		close(sock_fd);
-		err("Message too long (max %d bytes).\n", IPC_MAX_MSG);
+		err("Message too long (max %d bytes).\n", IPC_MAX_MSG - 1);
 	}
 
 	ssize_t sent = 0;

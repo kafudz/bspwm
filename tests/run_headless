@@ -481,8 +481,17 @@ assert_fail "border_width rejects negatives" $BSPC config border_width -1
 assert_fail "window_gap rejects out-of-range" $BSPC config window_gap 99999
 assert_fail "window_gap rejects trailing junk" $BSPC config window_gap 10abc
 assert_fail "pointer_motion_interval rejects negatives" $BSPC config pointer_motion_interval -1
+assert_fail "edge_snap_threshold rejects trailing junk" $BSPC config edge_snap_threshold 10abc
+assert_fail "magnet_threshold rejects trailing junk" $BSPC config magnet_threshold 5x
+assert_fail "cascade_offset rejects trailing junk" $BSPC config cascade_offset 4x
+assert_fail "max_tiles_per_desktop rejects trailing junk" $BSPC config max_tiles_per_desktop 2x
+assert_fail "mapping_events_count rejects trailing junk" $BSPC config mapping_events_count 5x
+assert_fail "split_ratio rejects trailing junk" $BSPC config split_ratio 0.5x
+LONG_CMD=$(printf '%0600d' 0 | tr '0' 'x')
+assert_fail "keybind --add rejects an over-long command" $BSPC keybind --add "super + F9" "$LONG_CMD"
 assert_fail "node -v rejects out-of-range" $BSPC node -v 99999 0
 assert_fail "ids above 32 bits are rejected" $BSPC query -N -n 0x1ffffffff
+assert_fail "node -g rejects an empty key" $BSPC node -g ""
 assert_fail "quit rejects an exit status above 255" $BSPC quit 300
 assert_ok "bspwm still running after bad quit" kill -0 "$BSPWM_PID"
 
@@ -531,6 +540,15 @@ FEED_PID=$!
 assert_ok "wm -l reads state from a FIFO" $BSPC wm -l "$FIFO_DIR/state"
 wait "$FEED_PID"
 assert_eq "desktops intact after FIFO restore" "$D_BEFORE" "$($BSPC query -D | wc -l)"
+
+# A FIFO with a writer that never sends must not freeze the WM event loop.
+mkfifo "$FIFO_DIR/idle"
+sleep 30 > "$FIFO_DIR/idle" &
+IDLE_PID=$!
+assert_fail "wm -l gives up on an idle FIFO" timeout 10 $BSPC wm -l "$FIFO_DIR/idle"
+kill "$IDLE_PID" 2>/dev/null || true
+wait "$IDLE_PID" 2>/dev/null || true
+assert_ok "WM still responds after an idle FIFO" $BSPC query -M
 rm -rf "$FIFO_DIR"
 
 echo "== Shutdown =="

@@ -49,6 +49,7 @@
 
 #define IPC_IDLE_MS     10
 #define IPC_TIMEOUT_MS  2000
+#define IPC_MAX_LIFETIME_MS (30 * 1000)
 
 typedef struct ipc_client_t ipc_client_t;
 struct ipc_client_t {
@@ -57,6 +58,7 @@ struct ipc_client_t {
 	size_t len, cap;
 	long long idle_at;     /* dispatch at this time, or 0 */
 	long long expire_at;   /* drop at this time */
+	long long deadline;    /* absolute cap, even with steady progress */
 	ipc_client_t *next;
 };
 
@@ -133,6 +135,7 @@ void ipc_accept(int sock_fd)
 	}
 	c->fd = fd;
 	c->expire_at = now_ms() + IPC_TIMEOUT_MS;
+	c->deadline = now_ms() + IPC_MAX_LIFETIME_MS;
 	struct epoll_event ev = {.events = EPOLLIN, .data.fd = fd};
 	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
 		free(c);
@@ -178,6 +181,13 @@ bool ipc_handle(int fd)
 		if (n > 0) {
 			c->len += n;
 			c->idle_at = 0;
+			/* A client that keeps making progress must not be killed by
+			 * the idle timeout, but a trickle cannot hold a slot forever:
+			 * the absolute deadline bounds it. */
+			c->expire_at = now_ms() + IPC_TIMEOUT_MS;
+			if (c->expire_at > c->deadline) {
+				c->expire_at = c->deadline;
+			}
 			continue;
 		}
 		if (n == 0) {

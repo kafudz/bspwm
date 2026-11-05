@@ -105,13 +105,46 @@ static void preserve_state_file(const char *state_path)
 		return;
 	}
 
-	FILE *src = fopen(state_path, "r");
+	/* O_NOFOLLOW both ways, and no O_TRUNC until the destination has been
+	 * verified to be a regular file owned by us. The state directory falls
+	 * back to /tmp when $XDG_RUNTIME_DIR is unset, where another uid could
+	 * otherwise plant a symlink and make this best-effort copy truncate an
+	 * arbitrary victim-owned file. */
+	int sfd = open(state_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	if (sfd == -1) {
+		return;
+	}
+	struct stat sst;
+	if (fstat(sfd, &sst) == -1 || !S_ISREG(sst.st_mode)) {
+		close(sfd);
+		return;
+	}
+	FILE *src = fdopen(sfd, "r");
 	if (src == NULL) {
+		close(sfd);
 		return;
 	}
 
-	FILE *dst = fopen(backup_path, "w");
+	int dfd = open(backup_path, O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+	if (dfd == -1) {
+		fclose(src);
+		return;
+	}
+	struct stat dst_st;
+	if (fstat(dfd, &dst_st) == -1 || !S_ISREG(dst_st.st_mode) ||
+	    dst_st.st_uid != getuid()) {
+		close(dfd);
+		fclose(src);
+		return;
+	}
+	if (fchmod(dfd, 0600) == -1 || ftruncate(dfd, 0) == -1) {
+		close(dfd);
+		fclose(src);
+		return;
+	}
+	FILE *dst = fdopen(dfd, "w");
 	if (dst == NULL) {
+		close(dfd);
 		fclose(src);
 		return;
 	}
@@ -262,41 +295,68 @@ int main(int argc, char *argv[])
 	}
 
 	{
-		sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+		sock_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 
 		if (sock_fd == -1) {
 			err("Couldn't create the socket.\n");
 		}
 
-		/* Never clobber a *live* bspwm's socket. The unlink below would
-		 * otherwise remove the running WM's socket file if this instance
-		 * resolved the same path — e.g. a nested or test bspwm on another
-		 * display that inherited this BSPWM_SOCKET and so got past the
-		 * "another WM is running" check. The victim keeps listening on a
-		 * now-nameless inode and every bspc/keybind silently fails until it
-		 * is restarted. If the path already names a socket we can connect to,
-		 * a bspwm is alive there; refuse instead of destroying it. On our own
-		 * restart the inherited socket was just closed above, so nothing is
-		 * listening and this probe passes. */
-		{
-			int probe = socket(AF_UNIX, SOCK_STREAM, 0);
-			if (probe != -1) {
-				bool alive = connect(probe, (struct sockaddr *) &sock_address,
-				                     sizeof(sock_address)) == 0;
-				close(probe);
-				if (alive) {
-					err("A bspwm is already listening on %s.\n", socket_path);
-				}
+		/* Never clobber a *live* bspwm's socket. Bind first: if the name is
+		 * already taken, a successful connect() means an instance is alive
+		 * and we refuse instead of destroying it. Otherwise the socket is
+		 * stale, so unlink it and retry once. Binding before probing keeps
+		 * the normal case free of an unlink and closes the race in which two
+		 * instances starting together could remove each other's fresh
+		 * socket. */
+		mode_t old_umask = umask(0077);
+		int bind_ret = bind(sock_fd, (struct sockaddr *) &sock_address, sizeof(sock_address));
+		int bind_errno = errno;
+		umask(old_umask);
+
+		if (bind_ret == -1 && bind_errno == EADDRINUSE) {
+			int probe = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+			if (probe == -1) {
+				/* Without a probe we cannot tell a live socket from a stale
+				 * one; never risk unlinking a running instance's socket. */
+				err("Couldn't create a probe socket: %s.\n", strerror(errno));
 			}
+			bool alive = connect(probe, (struct sockaddr *) &sock_address,
+			                     sizeof(sock_address)) == 0;
+			close(probe);
+			if (alive) {
+				err("A bspwm is already listening on %s.\n", socket_path);
+			}
+			/* Only remove something that really is a socket. A stale path
+			 * is the normal case, but never let a mistyped BSPWM_SOCKET (or
+			 * a planted entry) delete an unrelated file. */
+			struct stat lst;
+			if (lstat(socket_path, &lst) == -1) {
+				if (errno != ENOENT) {
+					err("Couldn't inspect the stale socket %s: %s.\n",
+					    socket_path, strerror(errno));
+				}
+			} else if (!S_ISSOCK(lst.st_mode)) {
+				err("Refusing to remove %s: not a socket.\n", socket_path);
+			} else if (unlink(socket_path) == -1 && errno != ENOENT) {
+				err("Couldn't remove the stale socket %s: %s.\n",
+				    socket_path, strerror(errno));
+			}
+			old_umask = umask(0077);
+			bind_ret = bind(sock_fd, (struct sockaddr *) &sock_address, sizeof(sock_address));
+			bind_errno = errno;
+			umask(old_umask);
 		}
 
-		unlink(socket_path);
-
-		if (bind(sock_fd, (struct sockaddr *) &sock_address, sizeof(sock_address)) == -1) {
-			err("Couldn't bind a name to the socket.\n");
+		if (bind_ret == -1) {
+			err("Couldn't bind a name to the socket: %s.\n", strerror(bind_errno));
 		}
 
-		chmod(socket_path, 0600);
+		/* The umask above already creates it 0600; verify rather than
+		 * silently leaving a world-accessible control socket if the
+		 * filesystem (or a restrictive ACL) disagrees. */
+		if (chmod(socket_path, 0600) == -1) {
+			err("Couldn't set socket permissions: %s.\n", strerror(errno));
+		}
 
 		if (listen(sock_fd, SOMAXCONN) == -1) {
 			err("Couldn't listen to the socket.\n");

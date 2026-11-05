@@ -63,3 +63,4 @@ core
 core.*
 tests/test_jsmn
 tests/test_geometry
+tests/test_parse

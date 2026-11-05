@@ -28,6 +28,8 @@
 #include <stdbool.h>
 #include <stdarg.h>
 #include <inttypes.h>
+#include <limits.h>
+#include <float.h>
 #include <unistd.h>
 #include "bspwm.h"
 #include "desktop.h"
@@ -374,6 +376,10 @@ void cmd_node(char **args, int num, FILE *rsp)
 			}
 			char *key = strtok(*args, EQL_TOK);
 			char *val = strtok(NULL, EQL_TOK);
+			if (key == NULL) {
+				fail(rsp, "node %s: Invalid argument: '%s'.\n", *(args - 1), *args);
+				break;
+			}
 			alter_state_t a;
 			bool b;
 			if (val == NULL) {
@@ -445,7 +451,7 @@ void cmd_node(char **args, int num, FILE *rsp)
 				break;
 			}
 			double rat;
-			if (sscanf(*args, "%lf", &rat) != 1 || rat <= 0 || rat >= 1) {
+			if (!parse_double(*args, 0.0, 1.0, &rat) || rat <= 0.0 || rat >= 1.0) {
 				fail(rsp, "node %s: Invalid argument: '%s'.\n", *(args - 1), *args);
 				break;
 			} else {
@@ -535,8 +541,8 @@ void cmd_node(char **args, int num, FILE *rsp)
 				break;
 			}
 			if ((*args)[0] == '+' || (*args)[0] == '-') {
-				float delta;
-				if (sscanf(*args, "%f", &delta) == 1) {
+				double delta;
+				if (parse_double(*args, -DBL_MAX, DBL_MAX, &delta)) {
 					double rat = trg.node->split_ratio;
 					if (delta > -1 && delta < 1) {
 						rat += delta;
@@ -556,7 +562,7 @@ void cmd_node(char **args, int num, FILE *rsp)
 				}
 			} else {
 				double rat;
-				if (sscanf(*args, "%lf", &rat) == 1 && rat > 0 && rat < 1) {
+				if (parse_double(*args, 0.0, 1.0, &rat) && rat > 0.0 && rat < 1.0) {
 					changed |= set_ratio(trg.node, rat);
 				} else {
 					fail(rsp, "node %s: Invalid argument: '%s'.\n", *(args - 1), *args);
@@ -1674,7 +1680,7 @@ void cmd_subscribe(char **args, int num, FILE *rsp)
 				fail(rsp, "subscribe %s: Not enough arguments.\n", *(args - 1));
 				goto failed;
 			}
-			if (sscanf(*args, "%i", &count) != 1 || count < 1) {
+			if (!parse_int(*args, 1, INT_MAX, &count)) {
 				fail(rsp, "subscribe %s: Invalid argument: '%s'.\n", *(args - 1), *args);
 				goto failed;
 			}
@@ -1992,7 +1998,7 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 #undef SET_STR
 	} else if (streq("split_ratio", name)) {
 		double r;
-		if (sscanf(value, "%lf", &r) == 1 && r > 0 && r < 1) {
+		if (parse_double(value, 0.0, 1.0, &r) && r > 0.0 && r < 1.0) {
 			split_ratio = r;
 		} else {
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value); \
@@ -2030,10 +2036,12 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 			return;
 		}
 	} else if (streq("mapping_events_count", name)) {
-		if (sscanf(value, "%" SCNi8, &mapping_events_count) != 1) {
+		int count;
+		if (!parse_int(value, INT8_MIN, INT8_MAX, &count)) {
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value);
 			return;
 		}
+		mapping_events_count = (int8_t) count;
 	} else if (streq("directional_focus_tightness", name)) {
 		tightness_t p;
 		if (parse_tightness(value, &p)) {
@@ -2175,7 +2183,7 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 		}
 	} else if (streq("max_tiles_per_desktop", name)) {
 		int limit;
-		if (sscanf(value, "%i", &limit) != 1 || limit < 1 || limit > MAX_TILES_PER_DESKTOP_LIMIT) {
+		if (!parse_int(value, 1, MAX_TILES_PER_DESKTOP_LIMIT, &limit)) {
 			fail(rsp, "config: %s: Invalid value: '%s' (must be 1-%d).\n", name, value, MAX_TILES_PER_DESKTOP_LIMIT);
 			return;
 		}
@@ -2207,14 +2215,14 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 		edge_snap_enabled = b;
 	} else if (streq("edge_snap_threshold", name)) {
 		int t;
-		if (sscanf(value, "%i", &t) != 1 || t < 1 || t > 100) {
+		if (!parse_int(value, 1, 100, &t)) {
 			fail(rsp, "config: %s: Invalid value: '%s' (must be 1-100).\n", name, value);
 			return;
 		}
 		edge_snap_threshold = t;
 	} else if (streq("magnet_threshold", name)) {
 		int t;
-		if (sscanf(value, "%i", &t) != 1 || t < 0 || t > 100) {
+		if (!parse_int(value, 0, 100, &t)) {
 			fail(rsp, "config: %s: Invalid value: '%s' (must be 0-100, 0 = off).\n", name, value);
 			return;
 		}
@@ -2228,7 +2236,7 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 		raise_floating_on_click = b;
 	} else if (streq("cascade_offset", name)) {
 		int o;
-		if (sscanf(value, "%i", &o) != 1 || o < 0 || o > 100) {
+		if (!parse_int(value, 0, 100, &o)) {
 			fail(rsp, "config: %s: Invalid value: '%s' (must be 0-100).\n", name, value);
 			return;
 		}
@@ -2455,14 +2463,23 @@ void cmd_keybind(char **args, int num, FILE *rsp)
 			fail(rsp, "keybind --add: Invalid key combo: '%s'.\n", args[0]);
 			return;
 		}
-		/* Join remaining args as command */
-		char cmd_buf[MAX_COMMAND] = {0};
+		/* Join remaining args as command. Measure first: silently cutting a
+		 * long command would register a binding that runs the wrong thing. */
+		size_t total = 0;
+		for (int i = 1; i < num; i++) {
+			total += strlen(args[i]);
+			if (i > 1) total++;
+			if (total >= MAX_COMMAND) break;
+		}
+		if (total >= MAX_COMMAND) {
+			fail(rsp, "keybind --add: Command too long (max %d).\n", MAX_COMMAND - 1);
+			return;
+		}
+		char cmd_buf[MAX_COMMAND];
 		size_t off = 0;
-		for (int i = 1; i < num && off < MAX_COMMAND - 2; i++) {
-			if (i > 1 && off < MAX_COMMAND - 1) cmd_buf[off++] = ' ';
-			size_t rem = MAX_COMMAND - 1 - off;
+		for (int i = 1; i < num; i++) {
+			if (i > 1) cmd_buf[off++] = ' ';
 			size_t arglen = strlen(args[i]);
-			if (arglen > rem) arglen = rem;
 			memcpy(cmd_buf + off, args[i], arglen);
 			off += arglen;
 		}

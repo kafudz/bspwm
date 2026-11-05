@@ -49,10 +49,15 @@ bool keybind_add(uint32_t modifiers, uint32_t keysym, const char *command)
 	if (keybind_table.count >= MAX_KEYBINDS)
 		return false;
 
+	size_t cmd_len = strlen(command);
+	if (cmd_len >= MAX_COMMAND) {
+		return false;
+	}
+
 	keybind_t *kb = &keybind_table.binds[keybind_table.count++];
 	kb->modifiers = modifiers;
 	kb->keysym = keysym;
-	snprintf(kb->command, sizeof(kb->command), "%s", command);
+	memcpy(kb->command, command, cmd_len + 1);
 	return true;
 }
 
@@ -98,6 +103,9 @@ bool keybind_parse_combo(const char *combo, uint32_t *modifiers, uint32_t *keysy
 
 	/* Work on a copy */
 	char buf[256];
+	if (strlen(combo) >= sizeof(buf)) {
+		return false;
+	}
 	snprintf(buf, sizeof(buf), "%s", combo);
 
 	/* Split by '+' and parse each token */
@@ -254,6 +262,22 @@ bool keybind_load_config(const char *path)
 	char pending_combo[256] = {0};
 
 	while (fgets(line, sizeof(line), f)) {
+		size_t raw_len = strlen(line);
+		if (raw_len == sizeof(line) - 1 && line[raw_len - 1] != '\n') {
+			/* The buffer filled up without a newline. A following EOF or
+			 * newline means the line merely ended exactly at the limit;
+			 * anything else means it continues past it. */
+			int ch = fgetc(f);
+			if (ch != EOF && ch != '\n') {
+				while (ch != '\n' && ch != EOF) {
+					ch = fgetc(f); /* drain the oversized line */
+				}
+				warn("keybind: line too long (max %zu), skipping.\n", sizeof(line) - 1);
+				pending_combo[0] = '\0';
+				continue;
+			}
+		}
+
 		/* Strip trailing newline */
 		size_t len = strlen(line);
 		while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
@@ -271,9 +295,15 @@ bool keybind_load_config(const char *path)
 
 			uint32_t modifiers, keysym;
 			if (keybind_parse_combo(pending_combo, &modifiers, &keysym)) {
-				if (!keybind_add(modifiers, keysym, p))
-					warn("keybind: table full (max %d), dropping '%s'.\n",
-					     MAX_KEYBINDS, pending_combo);
+				if (!keybind_add(modifiers, keysym, p)) {
+					if (keybind_table.count >= MAX_KEYBINDS) {
+						warn("keybind: table full (max %d), dropping '%s'.\n",
+						     MAX_KEYBINDS, pending_combo);
+					} else {
+						warn("keybind: command too long (max %d), dropping '%s'.\n",
+						     MAX_COMMAND - 1, pending_combo);
+					}
+				}
 			} else {
 				warn("keybind: could not parse combo '%s'.\n", pending_combo);
 			}
@@ -281,7 +311,12 @@ bool keybind_load_config(const char *path)
 		} else {
 			/* Check if line contains '+' (key combo) */
 			if (strchr(p, '+') != NULL) {
-				snprintf(pending_combo, sizeof(pending_combo), "%s", p);
+				if (strlen(p) >= sizeof(pending_combo)) {
+					warn("keybind: combo too long (max %zu), skipping.\n",
+					     sizeof(pending_combo) - 1);
+				} else {
+					memcpy(pending_combo, p, strlen(p) + 1);
+				}
 			}
 		}
 	}

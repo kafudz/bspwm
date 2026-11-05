@@ -33,6 +33,7 @@ bool parse_tightness(char *s, tightness_t *t);
 bool parse_degree(char *s, int *d);
 bool parse_id(char *s, uint32_t *id);
 bool parse_int(const char *s, long min, long max, int *v);
+bool parse_double(const char *s, double min, double max, double *v);
 bool parse_bool_declaration(char *s, char **key, bool *value, alter_state_t *state);
 bool parse_index(char *s, uint16_t *idx);
 bool parse_rectangle(char *s, bspwm_rect_t *r);

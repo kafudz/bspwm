@@ -392,6 +392,8 @@ int main(int argc, char *argv[])
 	sigaction(SIGINT, &sigact, NULL);
 	sigaction(SIGHUP, &sigact, NULL);
 	sigaction(SIGTERM, &sigact, NULL);
+	/* We avoid using SIG_IGN with SIGPIPE because that would be preserved across
+	   exec. */
 	sigaction(SIGPIPE, &sigact, NULL);
 	run_config(run_level);
 	backend_grab_keys();

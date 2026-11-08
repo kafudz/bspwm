@@ -671,7 +671,7 @@ uint32_t backend_get_color_pixel(const char *color)
 {
 	unsigned int red, green, blue;
 	if (sscanf(color + 1, "%02x%02x%02x", &red, &green, &blue) == 3) {
-		return (0xFF << 24) | (red << 16 | green << 8 | blue);
+		return (0xFFu << 24) | (red << 16 | green << 8 | blue);
 	}
 	return screen->black_pixel;
 }

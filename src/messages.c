@@ -381,7 +381,7 @@ void cmd_node(char **args, int num, FILE *rsp)
 				break;
 			}
 			alter_state_t a;
-			bool b;
+			bool b = false;
 			if (val == NULL) {
 				a = ALTER_TOGGLE;
 			} else {
@@ -1685,6 +1685,10 @@ void cmd_subscribe(char **args, int num, FILE *rsp)
 				goto failed;
 			}
 		} else if (streq("-f", *args) || streq("--fifo", *args)) {
+			if (fifo_path != NULL) {
+				fail(rsp, "subscribe %s: FIFO already specified.\n", *(args - 1));
+				goto failed;
+			}
 			fifo_path = mktempfifo(FIFO_TEMPLATE);
 			if (fifo_path == NULL) {
 				fail(rsp, "subscribe %s: Can't create FIFO.\n", *(args - 1));

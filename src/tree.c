@@ -109,7 +109,10 @@ void apply_layout(monitor_t *m, desktop_t *d, node_t *n, bspwm_rect_t rect, bspw
 			int wg = (gapless_monocle && d->layout == LAYOUT_MONOCLE ? 0 : d->window_gap);
 			r = rect;
 
-			if ((int)bw > (INT_MAX - wg) / 2) {
+			/* wg may be negative (window_gap accepts INT16_MIN..INT16_MAX),
+			 * so INT_MAX - wg would overflow int. Do the guard in 64-bit;
+			 * the final bleed always fits int (|wg| <= 32768, bw <= 65535). */
+			if ((int64_t)wg + 2 * (int64_t)bw > INT_MAX) {
 				bw = 0;
 			}
 

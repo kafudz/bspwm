@@ -35,6 +35,7 @@ extern bool grabbing;
 extern node_t *grabbed_node;
 
 void pointer_init(void);
+void update_lock_masks(void);
 void window_grab_buttons(bspwm_wid_t win);
 void window_grab_button(bspwm_wid_t win, uint8_t button, uint16_t modifier);
 void grab_buttons(void);

@@ -47,11 +47,17 @@ static inline void batch_ewmh_update(void)
 
 bool activate_desktop(monitor_t *m, desktop_t *d)
 {
-	if (!m || d == m->desk)
+	/* A concrete desktop on the focused monitor cannot be activated: use
+	 * `desktop -f` there. But a NULL request on either monitor must still
+	 * fall back below — checking d == m->desk here would short-circuit the
+	 * recovery when m->desk was just removed and is NULL. */
+	if (!m || (d != NULL && m == mon))
 		return false;
 
 	if (!d) {
-		d = m->desk ? m->desk : history_last_desktop(m, NULL);
+		d = m->desk;
+		if (!d)
+			d = history_last_desktop(m, NULL);
 		if (!d)
 			d = m->desk_head;
 	}
@@ -266,13 +272,17 @@ void insert_desktop(monitor_t *m, desktop_t *d)
 	if (!m || !d)
 		return;
 		
-	if (!m->desk) {
-		m->desk = m->desk_head = m->desk_tail = d;
+	/* Key off the list head, not m->desk: the latter can be NULL while other
+	 * desktops remain, and overwriting the list here would orphan them. */
+	if (!m->desk_head) {
+		m->desk_head = m->desk_tail = d;
 	} else {
 		m->desk_tail->next = d;
 		d->prev = m->desk_tail;
 		m->desk_tail = d;
 	}
+	if (!m->desk)
+		m->desk = d;
 }
 
 void add_desktop(monitor_t *m, desktop_t *d)

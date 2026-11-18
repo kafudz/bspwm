@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/epoll.h>
 #include <string.h>
@@ -525,6 +526,10 @@ bool schedule_rules(bspwm_wid_t win, rule_consequence_t *csq)
 	 * keep the pipe open and a stray copy of the read end would pin it. The
 	 * child's dup2() onto fd 1 gives it a copy without the flag. */
 	fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+	/* epoll tells us when a reply is available. Reading a blocking pipe until
+	 * EOF would freeze the whole WM if the rule command left a background
+	 * child holding the write end open; read until EAGAIN instead. */
+	fcntl(fds[0], F_SETFL, O_NONBLOCK);
 	fcntl(fds[1], F_SETFD, FD_CLOEXEC);
 	pid_t pid = fork();
 	if (pid == 0) {
@@ -541,7 +546,7 @@ bool schedule_rules(bspwm_wid_t win, rule_consequence_t *csq)
 		char wid[SMALEN];
 		char *csq_buf = NULL;
 		print_rule_consequence(&csq_buf, csq);
-		snprintf(wid, sizeof(wid), "%i", win);
+		snprintf(wid, sizeof(wid), "%u", win);
 		setsid();
 		execl(external_rules_command, external_rules_command, wid, csq->class_name, csq->instance_name,
 		      csq_buf != NULL ? csq_buf : "", (char *) NULL);
@@ -574,15 +579,24 @@ void parse_rule_consequence(int fd, rule_consequence_t *csq)
         return;
     }
     char data[BUFSIZ];
-    int nb;
-    int total_read = 0;
+    size_t total_read = 0;
 
-    while ((nb = read(fd, data + total_read, sizeof(data) - total_read - 1)) > 0) {
-        total_read += nb;
-        if ((size_t)total_read >= sizeof(data) - 1) {
-
-            break;
+    /* fds[0] is non-blocking and epoll already reported readability. Stop at
+     * EAGAIN, not EOF: a rule command that backgrounds a child can keep the
+     * write end open indefinitely without ever sending another byte. */
+    for (;;) {
+        ssize_t nb = read(fd, data + total_read, sizeof(data) - total_read - 1);
+        if (nb > 0) {
+            total_read += (size_t)nb;
+            if (total_read >= sizeof(data) - 1) {
+                break;
+            }
+            continue;
         }
+        if (nb < 0 && errno == EINTR) {
+            continue;
+        }
+        break;
     }
 
     if (total_read > 0) {

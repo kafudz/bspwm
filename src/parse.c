@@ -273,7 +273,7 @@ bool parse_id(char *s, uint32_t *id)
    char *end;
    errno = 0;
    long v = strtol(s, &end, 0);
-   if (errno != 0 || *end != '\0' || v < 0 || v > UINT32_MAX) {
+   if (errno != 0 || end == s || *end != '\0' || v < 0 || v > UINT32_MAX) {
        return false;
    }
    *id = (uint32_t)v;
@@ -328,8 +328,9 @@ bool parse_index(char *s, uint16_t *idx)
 {
    if (*s == '^') {
        char *end;
+       errno = 0;
        unsigned long val = strtoul(s + 1, &end, 10);
-       if (*end == '\0' && val <= UINT16_MAX) {
+       if (end != s + 1 && errno == 0 && *end == '\0' && val <= UINT16_MAX) {
            *idx = (uint16_t)val;
            return true;
        }
@@ -343,19 +344,19 @@ bool parse_rectangle(char *s, bspwm_rect_t *r)
    char *end;
 
    unsigned long w = strtoul(s, &end, 10);
-   if (*end != 'x' || w == 0 || w > UINT16_MAX) return false;
+   if (end == s || *end != 'x' || w == 0 || w > UINT16_MAX) return false;
    s = end + 1;
 
    unsigned long h = strtoul(s, &end, 10);
-   if (*end != '+' || h == 0 || h > UINT16_MAX) return false;
+   if (end == s || *end != '+' || h == 0 || h > UINT16_MAX) return false;
    s = end + 1;
 
    long x = strtol(s, &end, 10);
-   if (*end != '+' || x < INT16_MIN || x > INT16_MAX) return false;
+   if (end == s || *end != '+' || x < INT16_MIN || x > INT16_MAX) return false;
    s = end + 1;
 
    long y = strtol(s, &end, 10);
-   if (*end != '\0' || y < INT16_MIN || y > INT16_MAX) return false;
+   if (end == s || *end != '\0' || y < INT16_MIN || y > INT16_MAX) return false;
 
    r->width = (uint16_t)w;
    r->height = (uint16_t)h;

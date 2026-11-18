@@ -217,13 +217,17 @@ static bool keybind_exec_inproc(const char *command)
 	 * the WM's inherited stderr), so a failing binding is not silent. Use a
 	 * dup: process_message() fcloses the stream, which must not close the real
 	 * stderr fd. */
+	int saved_flags = -1;
 	int efd = dup(STDERR_FILENO);
 	if (efd >= 0) {
 		/* Non-blocking: this runs on the single event-loop thread. If stderr
 		 * is a pipe nobody is draining, a verbose reply must drop output
-		 * rather than block the whole WM in fwrite/fclose. */
+		 * rather than block the whole WM in fwrite/fclose. A dup shares the
+		 * open file description, so this also changes the real stderr;
+		 * process_message() restores it below. */
 		int fl = fcntl(efd, F_GETFL);
 		if (fl != -1) {
+			saved_flags = fl;
 			fcntl(efd, F_SETFL, fl | O_NONBLOCK);
 		}
 	}
@@ -235,6 +239,12 @@ static bool keybind_exec_inproc(const char *command)
 	}
 
 	process_message(argv, argc, rsp); /* consumes (fcloses) rsp */
+	if (saved_flags != -1) {
+		fcntl(STDERR_FILENO, F_SETFL, saved_flags);
+		/* A write that hit EAGAIN while stderr was non-blocking leaves the
+		 * stdio error flag set; without this, later warnings vanish. */
+		clearerr(stderr);
+	}
 	return true;
 	#undef KB_MAX_ARGS
 }
@@ -274,6 +284,9 @@ bool keybind_load_config(const char *path)
 				}
 				warn("keybind: line too long (max %zu), skipping.\n", sizeof(line) - 1);
 				pending_combo[0] = '\0';
+				if (ch == EOF) {
+					break; /* nothing left to read */
+				}
 				continue;
 			}
 		}

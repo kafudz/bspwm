@@ -1,5 +1,61 @@
 # Unreleased
 
+### Fixed
+
+Protocol and IPC:
+- A raw client that shuts down its write side without sending bspc's trailing
+  NUL (e.g. `query\0-M`) lost its last argument. The synthetic NUL is now
+  treated as terminating the final argument only when the client did not
+  already terminate it.
+- `subscribe -f -f` leaked a FIFO path and file; a duplicate `-f` is now
+  rejected.
+- A saved subscriber `fileDescriptor` is no longer `fdopen()`'d during startup
+  restore. Subscriber streams are process-local, and on re-exec the recorded
+  fd can be the new X connection or control socket — restoring it corrupted
+  or killed the instance.
+- Restart state-path formatting is now checked for truncation instead of
+  writing to a truncated path.
+
+Parsing and arithmetic:
+- JSON counts (`clientsCount`, `stickyCount`) and the window id passed to
+  external rule commands are printed with `%u`; `%i` was a format mismatch
+  and printed negative values at or above `INT_MAX`.
+- Empty numeric strings are rejected: `parse_id("")` returned 0,
+  `parse_index("^")` targeted index 0, and `parse_rectangle()` accepted empty
+  x/y values.
+- The border/gap guard in `apply_layout()` computed `INT_MAX - window_gap` in
+  `int`, which overflows for a negative `window_gap`. It now uses 64-bit math.
+- Keybind config loading no longer calls `fgets()` after draining an oversized
+  line that ended at EOF.
+
+X11 backend and event handling:
+- `xcb_connect()` returning NULL is handled instead of being passed to
+  `xcb_connection_has_error()`.
+- The `WM_TAKE_FOCUS` client message is zero-initialised; uninitialised stack
+  bytes were being sent to clients.
+- Lock modifiers (Num/Caps/Scroll) are computed once and shared between key
+  grabs, the pointer grabs, and the key-state filter, and refreshed on keymap
+  changes. This also removes two modifier-mapping round-trips per keybind
+  reload.
+- An in-process `bspc` keybind no longer leaves the WM's real stderr
+  non-blocking (a `dup()` shares the open file description).
+- External rule commands no longer freeze the WM when a background child
+  inherits the reply pipe; the reply is read non-blocking until `EAGAIN`.
+
+Tree and state consistency:
+- `activate_desktop()` restores the NULL fallback so a monitor whose active
+  desktop was removed recovers, and a concrete desktop on the focused monitor
+  is no longer half-activated. `insert_desktop()` keys off the desktop list
+  head so it cannot orphan existing desktops when the active one is NULL.
+- Preselection feedback id 0 (feedback disabled, or a receptacle) is no longer
+  used in X requests and button grabs, avoiding `BadWindow` errors.
+- A failed internal-node allocation during window insertion now aborts the
+  insertion instead of continuing with a detached node and an inflated client
+  count.
+- Restored urgent clients now rebuild `desktop_t.urgent_count`, so urgent
+  desktop selectors and status are correct immediately after a restart.
+- Subscriber cleanup is NULL-safe for `fclose()`/`unlink()`.
+
 ### Removed
 
 - The experimental wlroots Wayland backend (`bspwm-wl`, `backend_wlr.c`,

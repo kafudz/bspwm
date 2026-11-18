@@ -62,7 +62,7 @@ void query_state(FILE *rsp)
 	if (pri_mon) {
 		fprintf(rsp, "\"primaryMonitorId\":%u,", pri_mon->id);
 	}
-	fprintf(rsp, "\"clientsCount\":%i,", clients_count);
+	fprintf(rsp, "\"clientsCount\":%u,", clients_count);
 	fprintf(rsp, "\"monitors\":");
 	fprintf(rsp, "[");
 	for (monitor_t *m = mon_head; m; m = m->next) {
@@ -95,7 +95,7 @@ void query_monitor(monitor_t *m, FILE *rsp)
 	fprintf(rsp, "\"id\":%u,", m->id);
 	fprintf(rsp, "\"randrId\":%u,", m->output_id);
 	fprintf(rsp, "\"wired\":%s,", BOOL_STR(m->wired));
-	fprintf(rsp, "\"stickyCount\":%i,", m->sticky_count);
+	fprintf(rsp, "\"stickyCount\":%u,", m->sticky_count);
 	fprintf(rsp, "\"windowGap\":%i,", m->window_gap);
 	fprintf(rsp, "\"borderWidth\":%u,", m->border_width);
 	fprintf(rsp, "\"focusedDesktopId\":%u,", m->desk ? m->desk->id : 0);

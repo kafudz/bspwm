@@ -49,6 +49,7 @@
 #include "backend_x11.h"
 #include "ewmh.h"
 #include "keybind.h"
+#include "pointer.h"
 #include "settings.h"
 
 /* ------------------------------------------------------------------ */
@@ -76,7 +77,7 @@ static void get_atom(char *name, xcb_atom_t *atom);
 int backend_init(int *default_screen_out)
 {
 	dpy = xcb_connect(NULL, default_screen_out);
-	if (xcb_connection_has_error(dpy)) {
+	if (dpy == NULL || xcb_connection_has_error(dpy)) {
 		return -1;
 	}
 	return 0;
@@ -255,6 +256,10 @@ bool backend_window_get_geometry(bspwm_wid_t win, bspwm_rect_t *rect)
 
 void backend_window_listen_enter(bspwm_wid_t win, bool enable)
 {
+	/* Preselection feedback may be disabled (id 0); never address X with it. */
+	if (win == BSPWM_WID_NONE) {
+		return;
+	}
 	uint32_t mask = XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_FOCUS_CHANGE |
 	                (enable ? XCB_EVENT_MASK_ENTER_WINDOW : 0);
 	xcb_change_window_attributes(dpy, win, XCB_CW_EVENT_MASK, &mask);
@@ -634,10 +639,9 @@ void backend_send_take_focus(bspwm_wid_t win, bspwm_icccm_props_t *props)
 {
 	if (!props || !props->take_focus) return;
 
-	xcb_client_message_event_t evt;
+	xcb_client_message_event_t evt = {0};
 	evt.response_type = XCB_CLIENT_MESSAGE;
 	evt.format = 32;
-	evt.sequence = 0;
 	evt.window = win;
 	evt.type = ewmh->WM_PROTOCOLS;
 	evt.data.data32[0] = WM_TAKE_FOCUS;
@@ -841,69 +845,29 @@ void backend_grab_keys(void)
 	if (keybind_table.count == 0)
 		return;
 
-	/* TODO: cache the modifier mapping (currently fetched twice per call via
-	 * xcb_get_modifier_mapping_reply for Num_Lock and Scroll_Lock lookups)
-	 * and the xcb_key_symbols_t allocation, refreshing only on
-	 * XCB_MAPPING_NOTIFY, similarly to the previous key_symbols caching
-	 * fix. Avoids two server round-trips on every keybind reload. */
 	xcb_key_symbols_t *syms = xcb_key_symbols_alloc(dpy);
 	if (!syms)
 		return;
 
-	/* Lock mask combinations to grab through (NumLock, CapsLock, both, neither) */
-	uint16_t num_lock = 0, caps_lock = 0, scroll_lock = 0;
-	{
-		xcb_keycode_t *kc;
-		kc = xcb_key_symbols_get_keycode(syms, XK_Num_Lock);
-		if (kc) {
-			/* Find which modifier Num_Lock is mapped to */
-			xcb_get_modifier_mapping_reply_t *mmr =
-				xcb_get_modifier_mapping_reply(dpy, xcb_get_modifier_mapping(dpy), NULL);
-			if (mmr) {
-				xcb_keycode_t *modmap = xcb_get_modifier_mapping_keycodes(mmr);
-				int kpk = mmr->keycodes_per_modifier;
-				for (int i = 0; i < 8; i++) {
-					for (int j = 0; j < kpk; j++) {
-						if (modmap[i * kpk + j] == *kc)
-							num_lock = (uint16_t)(1 << i);
-					}
-				}
-				free(mmr);
-			}
-			free(kc);
-		}
-		caps_lock = XCB_MOD_MASK_LOCK;
-		kc = xcb_key_symbols_get_keycode(syms, XK_Scroll_Lock);
-		if (kc) {
-			xcb_get_modifier_mapping_reply_t *mmr =
-				xcb_get_modifier_mapping_reply(dpy, xcb_get_modifier_mapping(dpy), NULL);
-			if (mmr) {
-				xcb_keycode_t *modmap = xcb_get_modifier_mapping_keycodes(mmr);
-				int kpk = mmr->keycodes_per_modifier;
-				for (int i = 0; i < 8; i++) {
-					for (int j = 0; j < kpk; j++) {
-						if (modmap[i * kpk + j] == *kc)
-							scroll_lock = (uint16_t)(1 << i);
-					}
-				}
-				free(mmr);
-			}
-			free(kc);
-		}
-	}
+	/* Share the lock masks with the key-state filter and pointer grabs.
+	 * pointer_init()/mapping_notify() keep them current, so regrabbing needs
+	 * no modifier-mapping round-trips and cannot disagree with key_press(). */
+	uint16_t num_lock_mask = num_lock;
+	uint16_t caps_lock_mask = caps_lock;
+	uint16_t scroll_lock_mask = scroll_lock;
 
 	/* Any lock that isn't mapped comes back as 0, which collapses several of
 	 * these combinations onto each other. Grabbing the same (key, modifier)
 	 * twice is wasted round-trips, so keep only the distinct masks. */
 	uint16_t all_masks[] = {
 		0,
-		num_lock,
-		caps_lock,
-		scroll_lock,
-		num_lock | caps_lock,
-		num_lock | scroll_lock,
-		caps_lock | scroll_lock,
-		num_lock | caps_lock | scroll_lock,
+		num_lock_mask,
+		caps_lock_mask,
+		scroll_lock_mask,
+		num_lock_mask | caps_lock_mask,
+		num_lock_mask | scroll_lock_mask,
+		caps_lock_mask | scroll_lock_mask,
+		num_lock_mask | caps_lock_mask | scroll_lock_mask,
 	};
 	uint16_t lock_masks[LENGTH(all_masks)];
 	size_t lock_mask_count = 0;

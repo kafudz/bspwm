@@ -524,11 +524,30 @@ try:
 except socket.timeout:
     pass
 print("legacy", "ok" if out.strip() else "noreply")
+# A raw client that shuts down its write side without sending the trailing
+# NUL bspc normally appends must not lose its last argument.
+e = socket.socket(socket.AF_UNIX); e.connect(path)
+e.sendall(b"query\0-M"); e.shutdown(socket.SHUT_WR)
+e.settimeout(1); eout = b""
+try:
+    while True:
+        d = e.recv(4096)
+        if not d: break
+        eout += d
+except socket.timeout:
+    pass
+print("eof", "ok" if eout.strip().startswith(b"0x") else "bad:" + repr(eout[:40]))
 PY
 )
 	assert_eq "a stalled client does not block bspc" "stall ok" "$(echo "$IPC_OUT" | grep stall)"
 	assert_eq "a client without shutdown(SHUT_WR) gets a reply" "legacy ok" "$(echo "$IPC_OUT" | grep legacy)"
+	assert_eq "an EOF-terminated request keeps its last argument" "eof ok" "$(echo "$IPC_OUT" | grep eof)"
 fi
+
+# Duplicate -f is rejected instead of leaking a FIFO path.
+SUB_OUT=$($BSPC subscribe -f -f 2>&1 || true)
+assert_eq "duplicate subscribe -f is rejected" "subscribe -f: FIFO already specified." "$SUB_OUT"
+assert_ok "WM still responds after a rejected subscribe" $BSPC query -M
 
 # State loads from a FIFO.
 FIFO_DIR=$(mktemp -d)
@@ -551,6 +570,112 @@ wait "$IDLE_PID" 2>/dev/null || true
 assert_ok "WM still responds after an idle FIFO" $BSPC query -M
 rm -rf "$FIFO_DIR"
 
+# A saved subscriber fd is process-local. On startup restore it must not be
+# fdopen()'d onto a live descriptor (the old code clobbered the control
+# socket), so a fresh instance loading such state must stay responsive.
+if command -v python3 >/dev/null 2>&1; then
+	FD_RAW=$(mktemp)
+	FD_STATE=$(mktemp)
+	$BSPC wm -d > "$FD_RAW"
+	python3 -I - "$FD_RAW" "$FD_STATE" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+s["eventSubscribers"] = [{"fileDescriptor": 3, "field": 1, "count": -1}]
+open(sys.argv[2], "w").write(json.dumps(s) + "\n")
+PY
+	FD_OUT=$(python3 -I - "$FD_STATE" "$BSPWM" "$BSPC" <<'PY'
+import os, subprocess, sys, time
+state, bspwm, bspc = sys.argv[1], sys.argv[2], sys.argv[3]
+disp = None
+for n in range(150, 250):
+    if not os.path.exists("/tmp/.X%d-lock" % n):
+        disp = ":%d" % n
+        break
+if disp is None:
+    print("fdrestore fail"); sys.exit(0)
+env = dict(os.environ, DISPLAY=disp); env.pop("BSPWM_SOCKET", None)
+x = subprocess.Popen(["Xvfb", disp, "-screen", "0", "800x600x24"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(0.4)
+w = None; ok = False
+try:
+    w = subprocess.Popen([bspwm, "-c", "/dev/null", "-s", state],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+    time.sleep(1.2)
+    try:
+        q = subprocess.run([bspc, "query", "-M"], env=env, capture_output=True, timeout=5)
+        ok = (q.returncode == 0 and w.poll() is None)
+    except subprocess.TimeoutExpired:
+        pass
+finally:
+    if w is not None and w.poll() is None:
+        w.terminate()
+        try: w.wait(timeout=5)
+        except subprocess.TimeoutExpired: w.kill()
+    x.terminate()
+    try: x.wait(timeout=5)
+    except subprocess.TimeoutExpired: x.kill()
+print("fdrestore", "ok" if ok else "fail")
+PY
+)
+	assert_eq "startup restore ignores a saved subscriber fd" "fdrestore ok" "$(echo "$FD_OUT" | grep fdrestore)"
+	rm -f "$FD_RAW" "$FD_STATE"
+fi
+
+# An external rule command that backgrounds a child holding the reply pipe
+# open must not freeze the whole WM waiting for EOF.
+if command -v python3 >/dev/null 2>&1 && [ -x ./test_window ]; then
+	RULE_OUT=$(python3 -I - "$BSPWM" "$BSPC" "$PWD/test_window" <<'PY'
+import os, subprocess, sys, time
+bspwm, bspc, testwin = sys.argv[1], sys.argv[2], sys.argv[3]
+disp = None
+for n in range(200, 250):
+    if not os.path.exists("/tmp/.X%d-lock" % n):
+        disp = ":%d" % n
+        break
+if disp is None:
+    print("rulefd", "skip"); sys.exit(0)
+env = dict(os.environ, DISPLAY=disp); env.pop("BSPWM_SOCKET", None)
+x = subprocess.Popen(["Xvfb", disp, "-screen", "0", "800x600x24"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(0.5)
+twd = "/tmp/opencode-bspwm-ext-rule"
+os.makedirs(twd, exist_ok=True)
+script = os.path.join(twd, "rule.sh")
+cfg = os.path.join(twd, "bspwmrc")
+open(script, "w").write("#!/bin/sh\necho state=floating\nsleep 20 &\n")
+os.chmod(script, 0o755)
+open(cfg, "w").write("#!/bin/sh\nbspc config external_rules_command %s\n" % script)
+os.chmod(cfg, 0o755)
+w = tw = None; ok = False
+try:
+    w = subprocess.Popen([bspwm, "-c", cfg], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, env=env)
+    time.sleep(1.2)
+    tw = subprocess.Popen([testwin, "exttest", "ExtTest"], stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL, env=env)
+    time.sleep(1.0)
+    try:
+        q = subprocess.run([bspc, "query", "-M"], env=env, capture_output=True, timeout=3)
+        ok = (q.returncode == 0)
+    except subprocess.TimeoutExpired:
+        pass
+finally:
+    for p in (tw, w):
+        if p is not None and p.poll() is None:
+            p.terminate()
+            try: p.wait(timeout=5)
+            except subprocess.TimeoutExpired: p.kill()
+    x.terminate()
+    try: x.wait(timeout=5)
+    except subprocess.TimeoutExpired: x.kill()
+print("rulefd", "ok" if ok else "fail")
+PY
+)
+	assert_eq "external rule with an open reply pipe does not freeze the WM" "rulefd ok" "$(echo "$RULE_OUT" | grep rulefd)"
+	rm -rf /tmp/opencode-bspwm-ext-rule
+fi
+
 echo "== Shutdown =="
 assert_ok "bspc quit" $BSPC quit
 sleep 0.5
@@ -567,7 +692,7 @@ BSPWM_PID=""
 # ---- unit tests (backend-agnostic, no display needed) ----
 echo ""
 echo "== unit tests =="
-for unit in rule_match magnet jsmn geometry; do
+for unit in rule_match magnet jsmn geometry parse; do
 	if [ -x "./test_$unit" ]; then
 		if "./test_$unit" > "/tmp/bspwm_${unit}_unit.$$" 2>&1; then
 			printf "%b\n" "  ${GREEN}PASS${NC}: $unit unit suite"

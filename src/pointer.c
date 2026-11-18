@@ -50,13 +50,18 @@ static bspwm_wid_t snap_preview_win = BSPWM_WID_NONE;
 static snap_zone_t current_snap_zone = SNAP_NONE;
 static monitor_t *snap_target_monitor = NULL;
 
-void pointer_init(void)
+void update_lock_masks(void)
 {
-	num_lock = modfield_from_keysym(XK_Num_Lock);
-	caps_lock = modfield_from_keysym(XK_Caps_Lock);
-	scroll_lock = modfield_from_keysym(XK_Scroll_Lock);
+	num_lock = (uint16_t)modfield_from_keysym(XK_Num_Lock);
+	caps_lock = (uint16_t)modfield_from_keysym(XK_Caps_Lock);
 	if (caps_lock == XCB_NO_SYMBOL)
 		caps_lock = XCB_MOD_MASK_LOCK;
+	scroll_lock = (uint16_t)modfield_from_keysym(XK_Scroll_Lock);
+}
+
+void pointer_init(void)
+{
+	update_lock_masks();
 	grabbing = false;
 	grabbed_node = NULL;
 }
@@ -65,6 +70,11 @@ void pointer_init(void)
 
 void window_grab_button(bspwm_wid_t win, uint8_t button, uint16_t modifier)
 {
+	/* Preselection on a receptacle or with feedback disabled has id 0, which
+	 * is never a valid X window; grabbing buttons on it yields BadWindow. */
+	if (win == BSPWM_WID_NONE) {
+		return;
+	}
 #define GRAB(b, m) \
 	xcb_grab_button(dpy, false, win, XCB_EVENT_MASK_BUTTON_PRESS, \
 	                XCB_GRAB_MODE_SYNC, XCB_GRAB_MODE_ASYNC, BSPWM_WID_NONE, BSPWM_WID_NONE, b, m)

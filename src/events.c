@@ -591,6 +591,10 @@ void mapping_notify(void *evt)
 		cached_key_symbols = NULL;
 	}
 
+	/* Lock modifiers can move to different modifier bits when the keymap
+	 * changes. Refresh before regrabbing: backend_grab_keys() and the
+	 * key-state filter both use these masks. */
+	update_lock_masks();
 	ungrab_buttons();
 	grab_buttons();
 	backend_grab_keys();

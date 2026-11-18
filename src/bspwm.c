@@ -481,8 +481,8 @@ int main(int argc, char *argv[])
 		int dn = 0, sn = 0;
 		bool have_path = false;
 		if (backend_parse_display(&host, &dn, &sn)) {
-			make_state_path(state_path, sizeof(state_path), host, dn, sn);
-			have_path = true;
+			int ret = make_state_path(state_path, sizeof(state_path), host, dn, sn);
+			have_path = (ret >= 0 && (size_t)ret < sizeof(state_path));
 		}
 		free(host);
 

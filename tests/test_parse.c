@@ -49,5 +49,25 @@ int main(void)
 	      !parse_degree("99999999999999999999", &deg));
 	check("parse_degree rejects a non-right angle", !parse_degree("45", &deg));
 
+	uint32_t id;
+	check("parse_id accepts a hexadecimal id", parse_id("0x2a", &id) && id == 42);
+	check("parse_id rejects an empty string", !parse_id("", &id));
+	check("parse_id rejects trailing junk", !parse_id("42x", &id));
+	check("parse_id rejects overflow", !parse_id("0x1ffffffff", &id));
+
+	uint16_t idx;
+	check("parse_index accepts ^N", parse_index("^7", &idx) && idx == 7);
+	check("parse_index rejects a bare ^", !parse_index("^", &idx));
+	check("parse_index rejects a negative index", !parse_index("^-1", &idx));
+
+	bspwm_rect_t r;
+	check("parse_rectangle accepts a valid rectangle",
+	      parse_rectangle("640x480+10+20", &r) && r.width == 640 &&
+	      r.height == 480 && r.x == 10 && r.y == 20);
+	check("parse_rectangle rejects an empty width", !parse_rectangle("x1+0+0", &r));
+	check("parse_rectangle rejects an empty height", !parse_rectangle("1x+0+0", &r));
+	check("parse_rectangle rejects an empty x", !parse_rectangle("1x1++0", &r));
+	check("parse_rectangle rejects an empty y", !parse_rectangle("1x1+0+", &r));
+
 	return failures != 0;
 }

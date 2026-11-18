@@ -285,6 +285,14 @@ bool manage_window(bspwm_wid_t win, rule_consequence_t *csq, int fd)
 	}
 
 	f = insert_node(m, d, n, f);
+	/* insert_node() returns NULL both when the target was a receptacle that
+	 * it consumed (success) and when an internal node allocation failed
+	 * (OOM). Only the latter leaves n detached from the tree. */
+	if (n->parent == NULL && d->root != n) {
+		free_node(n);
+		clear_consequence_payload(csq);
+		return false;
+	}
 	clients_count++;
 	if (single_monocle && d->layout == LAYOUT_MONOCLE && tiled_count(d->root, true) > 1) {
 		set_layout(m, d, d->user_layout, false);
@@ -513,7 +521,7 @@ void update_colors_in(node_t *n, desktop_t *d, monitor_t *m)
 	if (n == NULL) {
 		return;
 	} else {
-		if (n->presel != NULL) {
+		if (n->presel != NULL && n->presel->feedback != BSPWM_WID_NONE) {
 			uint32_t pxl = backend_get_color_pixel(presel_feedback_color);
 			xcb_change_window_attributes(dpy, n->presel->feedback, XCB_CW_BACK_PIXEL, &pxl);
 			if (d == m->desk) {
@@ -1021,7 +1029,7 @@ void window_center(monitor_t *m, client_t *c)
 
 void window_stack(bspwm_wid_t w1, bspwm_wid_t w2, uint32_t mode)
 {
-	if (w2 == BSPWM_WID_NONE) {
+	if (w1 == BSPWM_WID_NONE || w2 == BSPWM_WID_NONE) {
 		return;
 	}
 	uint16_t mask = XCB_CONFIG_WINDOW_SIBLING | XCB_CONFIG_WINDOW_STACK_MODE;
@@ -1049,6 +1057,11 @@ void window_lower(bspwm_wid_t win)
 
 void window_set_visibility(bspwm_wid_t win, bool visible)
 {
+	/* A preselected internal may have no feedback window (presel_feedback
+	 * disabled, or a receptacle); id 0 is never a valid X window. */
+	if (win == BSPWM_WID_NONE) {
+		return;
+	}
 	uint32_t values_off[] = {ROOT_EVENT_MASK & ~XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY};
 	uint32_t values_on[] = {ROOT_EVENT_MASK};
 	xcb_change_window_attributes(dpy, root, XCB_CW_EVENT_MASK, values_off);

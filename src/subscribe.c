@@ -87,8 +87,12 @@ void remove_subscriber(subscriber_list_t *sb)
 	 * drops all subscribers across a re-exec — so keeping it open only leaked
 	 * the fd (it survives execvp with nothing to close it) and left the FIFO
 	 * file behind in $XDG_RUNTIME_DIR, once per subscriber per restart. */
-	fclose(sb->stream);
-	unlink(sb->fifo_path);
+	if (sb->stream != NULL) {
+		fclose(sb->stream);
+	}
+	if (sb->fifo_path != NULL) {
+		unlink(sb->fifo_path);
+	}
 	free(sb->fifo_path);
 	free(sb);
 }

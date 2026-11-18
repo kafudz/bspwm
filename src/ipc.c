@@ -110,7 +110,14 @@ static void dispatch(ipc_client_t *c)
 		warn("Can't open the client socket as file.\n");
 		close(fd);
 	} else {
-		handle_message(msg, len, rsp);
+		/* ipc_handle() appended a NUL at msg[len]. A client that already
+		 * terminated its last argument with NUL must not gain a spurious
+		 * empty argument; one that didn't must not lose its last argument. */
+		size_t msg_len = len;
+		if (msg[msg_len - 1] != '\0') {
+			msg_len++;
+		}
+		handle_message(msg, (int)msg_len, rsp);
 	}
 	free(msg);
 }

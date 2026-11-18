@@ -449,6 +449,11 @@ desktop_t *restore_desktop(jsmntok_t **t, char *json)
 		d->focus = find_by_id_in(d->root, focusedNodeId);
 	}
 
+	/* Clients are marked urgent directly from the state file, bypassing
+	 * set_urgent(); rebuild the desktop counter so urgent desktop selectors
+	 * and status reports are correct immediately after a restart. */
+	d->urgent_count = urgent_count_in(d->root);
+
 	return d;
 }
 
@@ -735,24 +740,11 @@ void restore_subscriber(subscriber_list_t *s, jsmntok_t **t, char *json)
 	for (int i = 0; i < n && !tok_oob(t); i++) {
 		if (keyeq("fileDescriptor", *t, json)) {
 			(*t)++;
-			int fd = -1;
-			long fd_max = sysconf(_SC_OPEN_MAX);
-			if (fd_max <= 0) {
-				fd_max = 1024;
-			}
-			if (sscanf(json + (*t)->start, "%i", &fd) == 1 &&
-			    fd > STDERR_FILENO && fd < (int) fd_max &&
-			    fd != sock_fd && fd != dpy_fd && fd != epoll_fd) {
-				struct stat st;
-				if (fstat(fd, &st) == 0 &&
-				    (S_ISSOCK(st.st_mode) || S_ISFIFO(st.st_mode) || S_ISREG(st.st_mode))) {
-					s->stream = fdopen(fd, "w");
-				} else {
-					warn("Restore subscriber: rejecting fd %i (fstat failed or wrong type).\n", fd);
-				}
-			} else {
-				warn("Restore subscriber: rejecting out-of-range fd.\n");
-			}
+			/* Subscriber streams are process-local. After a re-exec the
+			 * recorded fd is either gone or reused for the X connection,
+			 * the control socket, or epoll — fdopen()+fclose() on it would
+			 * corrupt or kill the new instance. Drop the entry; clients
+			 * must resubscribe. */
 		} else if (keyeq("fifoPath", *t, json)) {
 			(*t)++;
 			free(s->fifo_path);

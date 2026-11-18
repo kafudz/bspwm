@@ -299,11 +299,27 @@ void cancel_presel_in(monitor_t *m, desktop_t *d, node_t *n)
 	cancel_presel_in(m, d, n->second_child);
 }
 
+/* One post-order pass replaces a private_count() walk for every leaf in
+ * find_public(), which used to make insertion quadratic in tree size. */
+static unsigned int refresh_private_counts(node_t *n)
+{
+	if (!n) {
+		return 0;
+	}
+	unsigned int count = n->private ? 1 : 0;
+	count += refresh_private_counts(n->first_child);
+	count += refresh_private_counts(n->second_child);
+	n->private_subtree_count = count;
+	return count;
+}
+
 node_t *find_public(desktop_t *d)
 {
 	if (!d || !d->root) {
 		return NULL;
 	}
+
+	refresh_private_counts(d->root);
 
 	unsigned int b_manual_area = 0;
 	unsigned int b_automatic_area = 0;
@@ -319,7 +335,8 @@ node_t *find_public(desktop_t *d)
 			b_manual = n;
 			b_manual_area = n_area;
 		}
-		if (n_area > b_automatic_area && !n->presel && !n->private && private_count(n->parent) == 0) {
+		if (n_area > b_automatic_area && !n->presel && !n->private &&
+		    (n->parent == NULL || n->parent->private_subtree_count == 0)) {
 			b_automatic = n;
 			b_automatic_area = n_area;
 		}
@@ -421,9 +438,14 @@ int count_tiled_windows(desktop_t *d)
 	return count;
 }
 
-node_t *insert_node(monitor_t *m, desktop_t *d, node_t *n, node_t *f)
+/* Internal insertion primitive.  `c`, when non-NULL, is a freshly allocated
+ * internal node supplied by the caller so that callers which cannot tolerate
+ * an allocation failure after they have already mutated the tree
+ * (transfer_node) can allocate up front. */
+static node_t *insert_node_prealloc(monitor_t *m, desktop_t *d, node_t *n, node_t *f, node_t *c)
 {
 	if (!d || !n) {
+		free(c);
 		return NULL;
 	}
 
@@ -461,6 +483,7 @@ insert_node:
 	}
 
 	if (!f) {
+		free(c);
 		d->root = n;
 	} else if (IS_RECEPTACLE(f) && !f->presel) {
 		node_t *p = f->parent;
@@ -475,11 +498,14 @@ insert_node:
 		}
 		n->parent = p;
 		free(f);
+		free(c);
 		f = NULL;
 	} else {
-		node_t *c = make_node(BSPWM_WID_NONE);
 		if (!c) {
-			return NULL;
+			c = make_node(BSPWM_WID_NONE);
+			if (!c) {
+				return NULL;
+			}
 		}
 
 		node_t *p = f->parent;
@@ -610,6 +636,11 @@ insert_node:
 	}
 
 	return f;
+}
+
+node_t *insert_node(monitor_t *m, desktop_t *d, node_t *n, node_t *f)
+{
+	return insert_node_prealloc(m, d, n, f, NULL);
 }
 
 void insert_receptacle(monitor_t *m, desktop_t *d, node_t *n)
@@ -2005,6 +2036,18 @@ bool transfer_node(monitor_t *ms, desktop_t *ds, node_t *ns, monitor_t *md, desk
 	}
 	unsigned int uc = (ds != dd) ? urgent_count_in(ns) : 0;
 
+	/* insert_node() allocates a new internal node for every insertion except
+	 * into an empty desktop or a plain receptacle.  Allocate it before
+	 * unlink_node() so a transient OOM cannot leave the subtree detached
+	 * from both desktops. */
+	node_t *internal = NULL;
+	if (nd != NULL && !(IS_RECEPTACLE(nd) && !nd->presel)) {
+		internal = make_node(BSPWM_WID_NONE);
+		if (!internal) {
+			return false;
+		}
+	}
+
 	put_status(SBSC_MASK_NODE_TRANSFER, "node_transfer 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X\n",
 	           ms->id, ds->id, ns->id, md->id, dd->id, nd ? nd->id : 0);
 
@@ -2019,7 +2062,7 @@ bool transfer_node(monitor_t *ms, desktop_t *ds, node_t *ns, monitor_t *md, desk
 	}
 
 	unlink_node(ms, ds, ns);
-	insert_node(md, dd, ns, nd);
+	insert_node_prealloc(md, dd, ns, nd, internal);
 
 	/* Validate the remembered focus only once the subtree is back in a
 	 * tree. Between unlink and insert it belongs to no desktop, so a lookup
@@ -2470,12 +2513,28 @@ void neutralize_occluding_windows(monitor_t *m, desktop_t *d, node_t *n)
 	}
 
 	bool changed = false;
-	for (node_t *f = first_extrema(n); f; f = next_leaf(f, n)) {
+
+	/* Focus and state changes almost always pass a single client leaf.  In
+	 * that case the outer loop would run exactly once; hoisting it avoids a
+	 * full leaf-by-leaf walk for every focus change.  Internal nodes keep the
+	 * original nested loop because their descendant leaves can be stacked
+	 * differently. */
+	if (is_leaf(n) && n->client) {
 		for (node_t *a = first_extrema(d->root); a; a = next_leaf(a, d->root)) {
-			if (a != f && a->client && f->client &&
-			    IS_FULLSCREEN(a->client) && stack_cmp(f->client, a->client) < 0) {
+			if (a != n && a->client && IS_FULLSCREEN(a->client) &&
+			    stack_cmp(n->client, a->client) < 0) {
 				set_state(m, d, a, a->client->last_state);
 				changed = true;
+			}
+		}
+	} else {
+		for (node_t *f = first_extrema(n); f; f = next_leaf(f, n)) {
+			for (node_t *a = first_extrema(d->root); a; a = next_leaf(a, d->root)) {
+				if (a != f && a->client && f->client &&
+				    IS_FULLSCREEN(a->client) && stack_cmp(f->client, a->client) < 0) {
+					set_state(m, d, a, a->client->last_state);
+					changed = true;
+				}
 			}
 		}
 	}

@@ -148,7 +148,7 @@ bool manage_window(bspwm_wid_t win, rule_consequence_t *csq, int fd)
 
 	parse_rule_consequence(fd, csq);
 
-	if (!ignore_ewmh_struts && ewmh_handle_struts(win)) {
+	if (ewmh_handle_struts(win)) {
 		for (monitor_t *m = mon_head; m != NULL; m = m->next) {
 			for (desktop_t *d = m->desk_head; d != NULL; d = d->next) {
 				arrange(m, d);
@@ -371,6 +371,7 @@ void set_window_state(bspwm_wid_t win, bspwm_wm_state_t state)
 void unmanage_window(bspwm_wid_t win)
 {
 	invalidate_geometry_cache(win);
+	ewmh_struts_remove_owner(win);
 	coordinates_t loc;
 	if (locate_window(win, &loc)) {
 		put_status(SBSC_MASK_NODE_REMOVE, "node_remove 0x%08X 0x%08X 0x%08X\n", loc.monitor->id, loc.desktop->id, win);

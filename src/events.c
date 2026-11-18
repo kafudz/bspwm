@@ -190,6 +190,8 @@ void configure_notify(void *evt)
 	if (e->window == root) {
 		screen_width = e->width;
 		screen_height = e->height;
+		/* Right/bottom struts are measured from the screen edge. */
+		ewmh_struts_recompute_all();
 		return;
 	}
 
@@ -199,6 +201,9 @@ void configure_notify(void *evt)
 	 * long enough for `query -T` and pointer hit-testing to disagree with
 	 * what is on screen. */
 	invalidate_geometry_cache(e->window);
+	if (ewmh_strut_is_owner(e->window)) {
+		ewmh_struts_recompute_all();
+	}
 }
 
 void destroy_notify(void *evt)
@@ -236,7 +241,8 @@ void property_notify(void *evt)
 		
 	xcb_property_notify_event_t *e = (xcb_property_notify_event_t *) evt;
 
-	if (!ignore_ewmh_struts && e->atom == ewmh->_NET_WM_STRUT_PARTIAL && ewmh_handle_struts(e->window)) {
+	if ((e->atom == ewmh->_NET_WM_STRUT_PARTIAL || e->atom == ewmh->_NET_WM_STRUT) &&
+	    ewmh_handle_struts(e->window)) {
 		for (monitor_t *m = mon_head; m; m = m->next) {
 			for (desktop_t *d = m->desk_head; d; d = d->next) {
 				arrange(m, d);

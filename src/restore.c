@@ -348,6 +348,7 @@ monitor_t *restore_monitor(jsmntok_t **t, char *json)
 		return NULL;
 	}
 	uint32_t focused_desktop_id = 0;
+	padding_t restored_strut = {0, 0, 0, 0};
 
 	for (int i = 0; i < num && !tok_oob(t); i++) {
 		if (keyeq("name", *t, json)) {
@@ -366,6 +367,10 @@ monitor_t *restore_monitor(jsmntok_t **t, char *json)
 		} else if (keyeq("padding", *t, json)) {
 			(*t)++;
 			restore_padding(&m->padding, t, json);
+			continue;
+		} else if (keyeq("strutPadding", *t, json)) {
+			(*t)++;
+			restore_padding(&restored_strut, t, json);
 			continue;
 		} else if (keyeq("rectangle", *t, json)) {
 			(*t)++;
@@ -398,6 +403,17 @@ monitor_t *restore_monitor(jsmntok_t **t, char *json)
 			}
 		}
 	}
+
+	/* Stored padding is the effective value.  Split off the strut part so a
+	 * later recompute can release it without touching the configured value.
+	 * Old state files have no strutPadding key, in which case all of it is
+	 * treated as configured padding. */
+	m->strut_padding = restored_strut;
+	m->base_padding.top = m->padding.top - restored_strut.top;
+	m->base_padding.right = m->padding.right - restored_strut.right;
+	m->base_padding.bottom = m->padding.bottom - restored_strut.bottom;
+	m->base_padding.left = m->padding.left - restored_strut.left;
+	monitor_refresh_padding(m);
 
 	return m;
 }

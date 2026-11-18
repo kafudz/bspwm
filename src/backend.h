@@ -291,7 +291,6 @@ void backend_ewmh_update_client_list(bspwm_wid_t *list, uint32_t count, bool sta
 void backend_ewmh_wm_state_update(bspwm_wid_t win, uint16_t wm_flags);
 void backend_ewmh_set_supporting(bspwm_wid_t win);
 bool backend_ewmh_handle_struts(bspwm_wid_t win);
-void backend_ewmh_get_struts(bspwm_wid_t win, int *top, int *right, int *bottom, int *left);
 
 /* ------------------------------------------------------------------ */
 /*  Monitor / output discovery (replaces RandR / Xinerama)            */

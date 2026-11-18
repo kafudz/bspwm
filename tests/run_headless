@@ -14,6 +14,8 @@ set -e
 unset BSPWM_SOCKET
 BSPWM="../bspwm"
 BSPC="../bspc"
+STRUT_PID=
+STRUT_FIFO=
 PASS=0
 FAIL=0
 TESTS_RUN=0
@@ -25,6 +27,13 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 cleanup() {
+	if [ -n "$STRUT_PID" ]; then
+		kill "$STRUT_PID" 2>/dev/null || true
+		wait "$STRUT_PID" 2>/dev/null || true
+	fi
+	if [ -n "$STRUT_FIFO" ]; then
+		rm -f "$STRUT_FIFO" 2>/dev/null || true
+	fi
 	if [ -n "$BSPWM_PID" ]; then
 		kill "$BSPWM_PID" 2>/dev/null || true
 		wait "$BSPWM_PID" 2>/dev/null || true
@@ -469,6 +478,72 @@ for bcfg in borderless_monocle gapless_monocle focus_follows_pointer; do
 done
 
 # ---- Quit ----
+
+echo ""
+echo "== EWMH struts =="
+
+monitor_top_padding() {
+	$BSPC query -T -m 2>/dev/null | grep -o '"padding":{"top":[-0-9]*' | head -1 | sed 's/.*://'
+}
+
+if [ -x ./test_strut_window ]; then
+	TOP0=$($BSPC config top_padding 2>/dev/null)
+	assert_ok "set negative monitor padding" $BSPC config top_padding -10
+
+	STRUT_FIFO=$(mktemp -u "${TMPDIR:-/tmp}/bspwm-strut-XXXXXX")
+	mkfifo "$STRUT_FIFO"
+	# top = 40, full-width range: 0 0 40 0 0 0 0 0 0 1919 0 0
+	./test_strut_window 0 0 40 0 0 0 0 0 0 1919 0 0 <"$STRUT_FIFO" >/dev/null 2>&1 &
+	STRUT_PID=$!
+	exec 4>"$STRUT_FIFO"
+	sleep 0.4
+	assert_eq "strut adds to configured padding" "30" "$(monitor_top_padding)"
+
+	printf "set\n" >&4
+	sleep 0.3
+	assert_eq "re-setting a strut does not accumulate" "30" "$(monitor_top_padding)"
+
+	printf "delete\n" >&4
+	sleep 0.3
+	assert_eq "deleting strut property releases padding" "-10" "$(monitor_top_padding)"
+
+	printf "set\n" >&4
+	sleep 0.3
+	assert_eq "re-setting strut re-applies padding" "30" "$(monitor_top_padding)"
+
+	printf "unmap\n" >&4
+	sleep 0.3
+	assert_eq "unmapping strut owner releases padding" "-10" "$(monitor_top_padding)"
+
+	printf "map\nset\n" >&4
+	sleep 0.4
+	assert_eq "remapping strut owner re-applies padding" "30" "$(monitor_top_padding)"
+
+	printf "quit\n" >&4
+	sleep 0.3
+	wait "$STRUT_PID" 2>/dev/null || true
+	STRUT_PID=
+	assert_eq "destroying strut owner releases padding" "-10" "$(monitor_top_padding)"
+
+	# A CARDINAL >= 32768 used to wrap through int16_t and reserve bogus
+	# padding.  It is malformed on a 1080-high screen and must be ignored.
+	./test_strut_window 0 0 65636 0 0 0 0 0 0 1919 0 0 <"$STRUT_FIFO" >/dev/null 2>&1 &
+	STRUT_PID=$!
+	exec 4>"$STRUT_FIFO"
+	sleep 0.4
+	assert_eq "oversized strut extent is ignored" "-10" "$(monitor_top_padding)"
+
+	printf "quit\n" >&4
+	sleep 0.3
+	wait "$STRUT_PID" 2>/dev/null || true
+	STRUT_PID=
+
+	assert_ok "restore monitor padding" $BSPC config top_padding "$TOP0"
+	exec 4>&-
+	STRUT_FIFO=
+else
+	printf "%b\n" "  ${YELLOW}SKIP${NC}: EWMH strut lifecycle (needs x11 + test_strut_window)"
+fi
 
 echo ""
 echo "== Regressions =="

@@ -40,6 +40,8 @@ stacking_list_t *make_stack(node_t *n)
 		
 	s->node = n;
 	s->prev = s->next = NULL;
+	/* The node->entry link is installed by stack_insert_after/before once
+	 * any previous entry for the node has been removed. */
 	return s;
 }
 
@@ -72,6 +74,7 @@ void stack_insert_after(stacking_list_t *a, node_t *n)
 		if (stack_tail == a)
 			stack_tail = s;
 	}
+	n->stack_entry = s;
 }
 
 void stack_insert_before(stacking_list_t *a, node_t *n)
@@ -100,6 +103,7 @@ void stack_insert_before(stacking_list_t *a, node_t *n)
 		if (stack_head == a)
 			stack_head = s;
 	}
+	n->stack_entry = s;
 }
 
 void remove_stack(stacking_list_t *s)
@@ -118,7 +122,11 @@ void remove_stack(stacking_list_t *s)
 		stack_head = b;
 	if (s == stack_tail)
 		stack_tail = a;
-		
+
+	if (s->node && s->node->stack_entry == s) {
+		s->node->stack_entry = NULL;
+	}
+
 	free(s);
 }
 
@@ -126,6 +134,15 @@ void remove_stack_node(node_t *n)
 {
 	if (!n)
 		return;
+
+	/* Leaves are what actually appear in the stacking list.  Going straight
+	 * through the cached entry removes the O(stack size * tree depth) scan
+	 * from the per-leaf insertion path in stack().  Keep the scan for
+	 * internal nodes, which can still be passed by callers. */
+	if (is_leaf(n)) {
+		remove_stack(n->stack_entry);
+		return;
+	}
 
 	stacking_list_t *s = stack_head;
 	while (s) {

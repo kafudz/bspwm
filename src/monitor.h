@@ -30,6 +30,7 @@
 #define DEFAULT_MON_NAME     "MONITOR"
 
 monitor_t *make_monitor(const char *name, bspwm_rect_t *rect, uint32_t id);
+void monitor_refresh_padding(monitor_t *m);
 void update_root(monitor_t *m, bspwm_rect_t *rect);
 void reorder_monitor(monitor_t *m);
 void rename_monitor(monitor_t *m, const char *name);

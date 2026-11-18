@@ -236,9 +236,13 @@ int main(int argc, char *argv[])
 		 * unlink below destroys it every time, so by the time anyone notices
 		 * a problem the evidence is already gone. */
 		preserve_state_file(state_path);
+		ewmh_struts_clear();
 		restore_state(state_path);
 		unlink(state_path);
 		adopt_orphans();
+		/* Re-derive strut padding from the windows that are actually still
+		 * mapped instead of trusting the effective value in the dump. */
+		ewmh_struts_recompute_all();
 	}
 
 	dpy_fd = backend_get_fd();

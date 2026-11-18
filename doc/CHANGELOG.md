@@ -55,6 +55,37 @@ Tree and state consistency:
 - Restored urgent clients now rebuild `desktop_t.urgent_count`, so urgent
   desktop selectors and status are correct immediately after a restart.
 - Subscriber cleanup is NULL-safe for `fclose()`/`unlink()`.
+- `transfer_node()` allocates the internal node it needs before unlinking the
+  subtree. A transient allocation failure can no longer leave the subtree
+  detached from both desktops.
+- Monitor padding is now split into configured (`base_padding`) and derived
+  (`strut_padding`) parts. Changing a monitor or desktop config no longer
+  wipes out live strut claims, and state dumps record both so a restart does
+  not double-count them.
+
+EWMH struts:
+- Deleting `_NET_WM_STRUT`/`_NET_WM_STRUT_PARTIAL`, unmapping or destroying a
+  strut owner, or changing monitor/screen geometry now recomputes monitor
+  padding from the live set of owners. Previously padding only ever grew, so
+  a panel that exited left a permanent hole in the layout.
+- Multiple strut owners compose by taking the maximum claim per side; losing
+  one owner no longer drops the claim of another. Re-setting the same strut
+  is idempotent instead of accumulating.
+- Strut CARDINALs are no longer cast to `int16_t`; values >= 32768 are
+  validated and malformed extents are ignored. Right/bottom arithmetic uses
+  64-bit math, so screen-edge subtraction cannot wrap.
+- `ignore_ewmh_struts` can be toggled at runtime without losing track of
+  existing owners.
+
+Performance:
+- `neutralize_occluding_windows()` now takes a linear fast path for the
+  common case of a single client leaf instead of walking every leaf pair on
+  every focus change.
+- `find_public()` computes private-subtree counts in one post-order pass,
+  removing a per-leaf recursive count from window insertion.
+- `remove_stack_node()` removes a leaf's stacking entry directly via a
+  cached pointer instead of scanning and testing the whole stacking list on
+  every insertion.
 
 ### Removed
 

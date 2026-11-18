@@ -66,7 +66,9 @@ monitor_t *make_monitor(const char *name, bspwm_rect_t *rect, uint32_t id)
 		m->name[sizeof(m->name) - 1] = '\0';
 	}
 
-	m->padding = padding;
+	m->base_padding = padding;
+	m->strut_padding = (padding_t) {0, 0, 0, 0};
+	monitor_refresh_padding(m);
 	m->border_width = border_width;
 	m->window_gap = window_gap;
 	m->root = BSPWM_WID_NONE;
@@ -83,6 +85,17 @@ monitor_t *make_monitor(const char *name, bspwm_rect_t *rect, uint32_t id)
 	return m;
 }
 
+void monitor_refresh_padding(monitor_t *m)
+{
+	if (!m) {
+		return;
+	}
+	m->padding.top = m->base_padding.top + m->strut_padding.top;
+	m->padding.right = m->base_padding.right + m->strut_padding.right;
+	m->padding.bottom = m->base_padding.bottom + m->strut_padding.bottom;
+	m->padding.left = m->base_padding.left + m->strut_padding.left;
+}
+
 void update_root(monitor_t *m, bspwm_rect_t *rect)
 {
 	if (!m || !rect)
@@ -90,6 +103,10 @@ void update_root(monitor_t *m, bspwm_rect_t *rect)
 
 	bspwm_rect_t last_rect = m->rectangle;
 	m->rectangle = *rect;
+
+	/* Strut claims are relative to the (possibly just changed) monitor and
+	 * screen geometry, so refresh them before arranging this monitor. */
+	ewmh_struts_update();
 
 	if (m->root == BSPWM_WID_NONE) {
 		m->root = backend_create_internal_window("monitor_root", *rect, true);
@@ -573,6 +590,10 @@ bool update_monitors(void)
 		center_pointer(mon->rectangle);
 		ewmh_update_current_desktop();
 	}
+
+	/* Newly added or resized monitors need their share of the live strut
+	 * claims; newly removed ones must stop contributing to the layout. */
+	ewmh_struts_recompute_all();
 
 	return (mon != NULL);
 }

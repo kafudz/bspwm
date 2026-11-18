@@ -6,10 +6,13 @@ endif
 
 CFLAGS  += -std=c99 -D_POSIX_C_SOURCE=200809L -pedantic -Wall -Wextra
 
-all: test_window test_rule_match test_magnet test_jsmn test_geometry test_parse
+all: test_window test_strut_window test_rule_match test_magnet test_jsmn test_geometry test_parse
 
 test_window: test_window.c
 	$(CC) $(CFLAGS) -o $@ $< -lxcb -lxcb-icccm
+
+test_strut_window: test_strut_window.c
+	$(CC) $(CFLAGS) -o $@ $< -lxcb
 
 test_rule_match: test_rule_match.c ../src/rule_match.c ../src/rule_match.h
 	$(CC) $(CFLAGS) -std=$(STD) -o $@ test_rule_match.c ../src/rule_match.c
@@ -27,6 +30,6 @@ test_parse: test_parse.c ../src/parse.c ../src/parse.h
 	$(CC) $(CFLAGS) -std=$(STD) -o $@ test_parse.c ../src/parse.c
 
 clean:
-	$(RM) test_window test_rule_match test_magnet test_jsmn test_geometry test_parse *.o
+	$(RM) test_window test_strut_window test_rule_match test_magnet test_jsmn test_geometry test_parse *.o
 
 .PHONY: all clean

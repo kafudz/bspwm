@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include "bspwm.h"
 #include "desktop.h"
+#include "ewmh.h"
 #include "monitor.h"
 #include "pointer.h"
 #include "query.h"
@@ -1597,6 +1598,7 @@ void cmd_wm(char **args, int num, FILE *rsp)
 				fail(rsp, "%s", "");
 				break;
 			}
+			ewmh_struts_recompute_all();
 		} else if (streq("-a", *args) || streq("--add-monitor", *args)) {
 			num--, args++;
 			if (num < 2) {
@@ -1931,15 +1933,17 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 		}
 		SET_DEF_DEFMON_DESK(window_gap, wg)
 #undef SET_DEF_DEFMON_DESK
-#define SET_DEF_MON_DESK(k, v) \
+#define SET_PADDING(side, v) \
 		if (loc.desktop != NULL) { \
-			loc.desktop->k = v; \
+			loc.desktop->padding.side = v; \
 		} else if (loc.monitor != NULL) { \
-			loc.monitor->k = v; \
+			loc.monitor->base_padding.side = v; \
+			monitor_refresh_padding(loc.monitor); \
 		} else { \
-			k = v; \
+			padding.side = v; \
 			for (monitor_t *m = mon_head; m != NULL; m = m->next) { \
-				m->k = v; \
+				m->base_padding.side = v; \
+				monitor_refresh_padding(m); \
 			} \
 		}
 	} else if (streq("top_padding", name)) {
@@ -1948,29 +1952,29 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value);
 			return;
 		}
-		SET_DEF_MON_DESK(padding.top, tp)
+		SET_PADDING(top, tp)
 	} else if (streq("right_padding", name)) {
 		int rp;
 		if (!parse_int(value, INT16_MIN, INT16_MAX, &rp)) {
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value);
 			return;
 		}
-		SET_DEF_MON_DESK(padding.right, rp)
+		SET_PADDING(right, rp)
 	} else if (streq("bottom_padding", name)) {
 		int bp;
 		if (!parse_int(value, INT16_MIN, INT16_MAX, &bp)) {
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value);
 			return;
 		}
-		SET_DEF_MON_DESK(padding.bottom, bp)
+		SET_PADDING(bottom, bp)
 	} else if (streq("left_padding", name)) {
 		int lp;
 		if (!parse_int(value, INT16_MIN, INT16_MAX, &lp)) {
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value);
 			return;
 		}
-		SET_DEF_MON_DESK(padding.left, lp)
-#undef SET_DEF_MON_DESK
+		SET_PADDING(left, lp)
+#undef SET_PADDING
 	} else if (streq("top_monocle_padding", name)) {
 		if (!parse_int(value, INT16_MIN, INT16_MAX, &monocle_padding.top)) {
 			fail(rsp, "config: %s: Invalid value: '%s'.\n", name, value);
@@ -2157,6 +2161,9 @@ void set_setting(coordinates_t loc, char *name, char *value, FILE *rsp)
 		SET_BOOL(pointer_follows_monitor)
 		SET_BOOL(ignore_ewmh_focus)
 		SET_BOOL(ignore_ewmh_struts)
+		/* Drop or restore live strut contributions without forgetting the
+		 * owners, so toggling back does not need clients to re-set props. */
+		ewmh_struts_recompute_all();
 		SET_BOOL(center_pseudo_tiled)
 		SET_BOOL(removal_adjustment)
 #undef SET_BOOL

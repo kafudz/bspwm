@@ -274,6 +274,8 @@ struct presel_t {
 	bspwm_wid_t feedback;
 };
 
+typedef struct stacking_list_t stacking_list_t;
+
 typedef struct constraints_t constraints_t;
 struct constraints_t {
 	uint16_t min_width;
@@ -298,6 +300,11 @@ struct node_t {
 	bool private;
 	bool locked;
 	bool marked;
+	/* Cached count of private nodes in this subtree, refreshed by
+	 * find_public() before it walks the leaves. */
+	unsigned int private_subtree_count;
+	/* Direct pointer to this leaf's entry in the global stacking list. */
+	struct stacking_list_t *stack_entry;
 };
 
 typedef struct padding_t padding_t;
@@ -333,7 +340,12 @@ struct monitor_t {
 	bspwm_output_id_t output_id;
 	bspwm_wid_t root;
 	bool wired;
+	/* `padding` is the effective value (base + strut).  Keeping the two
+	 * contributions separate lets strut owners come and go without losing
+	 * the configured, possibly negative, padding. */
 	padding_t padding;
+	padding_t base_padding;
+	padding_t strut_padding;
 	unsigned int sticky_count;
 	int window_gap;
 	unsigned int border_width;
@@ -359,7 +371,6 @@ struct history_t {
 	history_t *next;
 };
 
-typedef struct stacking_list_t stacking_list_t;
 struct stacking_list_t {
 	node_t *node;
 	stacking_list_t *prev;

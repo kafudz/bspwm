@@ -101,6 +101,8 @@ void query_monitor(monitor_t *m, FILE *rsp)
 	fprintf(rsp, "\"focusedDesktopId\":%u,", m->desk ? m->desk->id : 0);
 	fprintf(rsp, "\"padding\":");
 	query_padding(m->padding, rsp);
+	fprintf(rsp,",\"strutPadding\":");
+	query_padding(m->strut_padding, rsp);
 	fprintf(rsp,",");
 	fprintf(rsp, "\"rectangle\":");
 	query_rectangle(m->rectangle, rsp);

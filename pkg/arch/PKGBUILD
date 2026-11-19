@@ -3,7 +3,7 @@
 
 pkgname=bspwm1
 pkgver=1.7.5
-pkgrel=1
+pkgrel=2
 pkgdesc="tiling window manager based on binary space partitioning"
 arch=('x86_64')
 url="https://github.com/rotkonetworks/bspwm1"
@@ -28,6 +28,14 @@ pkgver() {
 build() {
 	cd "bspwm1"
 	make
+}
+
+check() {
+	cd "bspwm1"
+	make -C tests test_rule_match test_magnet test_jsmn test_geometry test_parse
+	for test in test_rule_match test_magnet test_jsmn test_geometry test_parse; do
+		"tests/$test"
+	done
 }
 
 package() {

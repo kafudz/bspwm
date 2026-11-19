@@ -1,8 +1,8 @@
-pkgbase = bspwm1
-	pkgdesc = tiling window manager based on binary space partitioning
+pkgbase = bspwm-kafudz-git
+	pkgdesc = Tiling window manager based on binary space partitioning (kafudz git version)
 	pkgver = 1.7.5
-	pkgrel = 2
-	url = https://github.com/rotkonetworks/bspwm1
+	pkgrel = 1
+	url = https://github.com/kafudz/bspwm
 	arch = x86_64
 	license = BSD-2-Clause
 	makedepends = git
@@ -12,9 +12,9 @@ pkgbase = bspwm1
 	depends = xcb-util-wm
 	depends = libxkbcommon
 	optdepends = sxhkd: keybinding daemon
-	provides = bspwm
+	provides = bspwm=1.7.5
 	conflicts = bspwm
-	source = git+https://github.com/rotkonetworks/bspwm1.git#tag=v1.7.5
+	source = bspwm::git+https://github.com/kafudz/bspwm.git#branch=master
 	sha256sums = SKIP
 
-pkgname = bspwm1
+pkgname = bspwm-kafudz-git

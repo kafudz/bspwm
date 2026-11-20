@@ -508,15 +508,6 @@ void hide_presel_feedbacks(monitor_t *m, desktop_t *d, node_t *n)
 	}
 }
 
-void update_colors(void)
-{
-	for (monitor_t *m = mon_head; m != NULL; m = m->next) {
-		for (desktop_t *d = m->desk_head; d != NULL; d = d->next) {
-			update_colors_in(d->root, d, m);
-		}
-	}
-}
-
 void update_colors_in(node_t *n, desktop_t *d, monitor_t *m)
 {
 	if (n == NULL) {
@@ -996,13 +987,6 @@ void window_move(bspwm_wid_t win, int16_t x, int16_t y)
 	invalidate_geometry_cache(win);
 }
 
-void window_resize(bspwm_wid_t win, uint16_t w, uint16_t h)
-{
-	uint32_t values[] = {w, h};
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_WIDTH_HEIGHT, values);
-	invalidate_geometry_cache(win);
-}
-
 void window_move_resize(bspwm_wid_t win, int16_t x, int16_t y, uint16_t w, uint16_t h)
 {
 	uint32_t values[] = {x, y, w, h};
@@ -1132,25 +1116,6 @@ void get_atom(char *name, xcb_atom_t *atom)
 		*atom = BSPWM_WID_NONE;
 	}
 	free(reply);
-}
-
-void set_atom(bspwm_wid_t win, xcb_atom_t atom, uint32_t value)
-{
-	xcb_change_property(dpy, XCB_PROP_MODE_REPLACE, win, atom, XCB_ATOM_CARDINAL, 32, 1, &value);
-}
-
-void send_client_message(bspwm_wid_t win, xcb_atom_t property, xcb_atom_t value)
-{
-	xcb_client_message_event_t e = {
-		.response_type = XCB_CLIENT_MESSAGE,
-		.format = 32,
-		.window = win,
-		.type = property,
-		.data.data32 = {value, XCB_CURRENT_TIME},
-	};
-
-	xcb_send_event(dpy, false, win, XCB_EVENT_MASK_NO_EVENT, (char *) &e);
-	xcb_flush(dpy);
 }
 
 bool window_exists(bspwm_wid_t win)

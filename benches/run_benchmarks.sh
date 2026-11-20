@@ -71,7 +71,7 @@ check_dependencies() {
     fi
 
     # Check for required libraries (Arch Linux)
-    if ! pkg-config --exists xcb xcb-util xcb-keysyms xcb-icccm xcb-ewmh xcb-randr xcb-xinerama xcb-shape 2>/dev/null; then
+    if ! pkg-config --exists xcb xcb-util xcb-keysyms xcb-icccm xcb-ewmh xcb-randr xcb-shape 2>/dev/null; then
         warning "Some XCB libraries might be missing. Install with:"
         warning "  sudo pacman -S libxcb xcb-util xcb-util-keysyms xcb-util-wm"
     fi

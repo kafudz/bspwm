@@ -36,11 +36,6 @@
 
 /* ewmh is defined in backend_x11.c */
 
-void ewmh_init(void)
-{
-	backend_ewmh_init();
-}
-
 void ewmh_update_active_window(void)
 {
 	ensure_focused_monitor();

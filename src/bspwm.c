@@ -659,8 +659,11 @@ void cleanup(void)
 void sig_handler(int sig)
 {
 	if (sig == SIGCHLD) {
+		/* waitpid() may clobber errno; the interrupted code must see its own. */
+		int saved_errno = errno;
 		while (waitpid(-1, 0, WNOHANG) > 0)
 			;
+		errno = saved_errno;
 	} else if (sig == SIGINT || sig == SIGHUP || sig == SIGTERM) {
 		running = 0;
 	}

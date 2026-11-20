@@ -27,7 +27,6 @@
 
 #include "types.h"
 
-void ewmh_init(void);
 void ewmh_update_active_window(void);
 void ewmh_update_number_of_desktops(void);
 uint32_t ewmh_get_desktop_index(desktop_t *d);

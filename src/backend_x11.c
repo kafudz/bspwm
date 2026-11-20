@@ -41,7 +41,6 @@
 #include <xcb/xcb_event.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/randr.h>
-#include <xcb/xinerama.h>
 #include <xcb/shape.h>
 #include <xkbcommon/xkbcommon.h>
 #include "bspwm.h"
@@ -105,12 +104,6 @@ int backend_get_fd(void)
 void backend_flush(void)
 {
 	xcb_flush(dpy);
-}
-
-bool backend_dispatch_events(void)
-{
-	xcb_aux_sync(dpy);
-	return true;
 }
 
 bool backend_check_connection(void)
@@ -186,74 +179,6 @@ void backend_destroy_window(bspwm_wid_t win)
 	xcb_destroy_window(dpy, win);
 }
 
-void backend_window_show(bspwm_wid_t win)
-{
-	xcb_map_window(dpy, win);
-}
-
-void backend_window_hide(bspwm_wid_t win)
-{
-	xcb_unmap_window(dpy, win);
-}
-
-void backend_window_move(bspwm_wid_t win, int16_t x, int16_t y)
-{
-	uint32_t values[] = {(uint32_t)x, (uint32_t)y};
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values);
-}
-
-void backend_window_resize(bspwm_wid_t win, uint16_t w, uint16_t h)
-{
-	uint32_t values[] = {w, h};
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
-}
-
-void backend_window_move_resize(bspwm_wid_t win, int16_t x, int16_t y, uint16_t w, uint16_t h)
-{
-	uint32_t values[] = {(uint32_t)x, (uint32_t)y, w, h};
-	xcb_configure_window(dpy, win,
-		XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
-		XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values);
-}
-
-void backend_window_set_border_width(bspwm_wid_t win, uint32_t bw)
-{
-	uint32_t values[] = {bw};
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_BORDER_WIDTH, values);
-}
-
-void backend_window_set_border_color(bspwm_wid_t win, uint32_t color)
-{
-	uint32_t values[] = {color};
-	xcb_change_window_attributes(dpy, win, XCB_CW_BORDER_PIXEL, values);
-}
-
-bool backend_window_exists(bspwm_wid_t win)
-{
-	xcb_generic_error_t *err = NULL;
-	xcb_get_window_attributes_reply_t *wa = xcb_get_window_attributes_reply(
-		dpy, xcb_get_window_attributes(dpy, win), &err);
-	if (wa) {
-		free(wa);
-		return true;
-	}
-	free(err);
-	return false;
-}
-
-bool backend_window_get_geometry(bspwm_wid_t win, bspwm_rect_t *rect)
-{
-	xcb_get_geometry_reply_t *geo = xcb_get_geometry_reply(
-		dpy, xcb_get_geometry(dpy, win), NULL);
-	if (!geo) return false;
-	rect->x = geo->x;
-	rect->y = geo->y;
-	rect->width = geo->width;
-	rect->height = geo->height;
-	free(geo);
-	return true;
-}
-
 void backend_window_listen_enter(bspwm_wid_t win, bool enable)
 {
 	/* Preselection feedback may be disabled (id 0); never address X with it. */
@@ -269,45 +194,9 @@ void backend_window_listen_enter(bspwm_wid_t win, bool enable)
 /*  Stacking                                                          */
 /* ------------------------------------------------------------------ */
 
-void backend_window_stack_above(bspwm_wid_t w1, bspwm_wid_t w2)
-{
-	uint32_t values[] = {w2, XCB_STACK_MODE_ABOVE};
-	xcb_configure_window(dpy, w1,
-		XCB_CONFIG_WINDOW_SIBLING | XCB_CONFIG_WINDOW_STACK_MODE, values);
-}
-
-void backend_window_stack_below(bspwm_wid_t w1, bspwm_wid_t w2)
-{
-	uint32_t values[] = {w2, XCB_STACK_MODE_BELOW};
-	xcb_configure_window(dpy, w1,
-		XCB_CONFIG_WINDOW_SIBLING | XCB_CONFIG_WINDOW_STACK_MODE, values);
-}
-
-void backend_window_raise(bspwm_wid_t win)
-{
-	uint32_t values[] = {XCB_STACK_MODE_ABOVE};
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_STACK_MODE, values);
-}
-
-void backend_window_lower(bspwm_wid_t win)
-{
-	uint32_t values[] = {XCB_STACK_MODE_BELOW};
-	xcb_configure_window(dpy, win, XCB_CONFIG_WINDOW_STACK_MODE, values);
-}
-
 /* ------------------------------------------------------------------ */
 /*  Focus                                                             */
 /* ------------------------------------------------------------------ */
-
-void backend_set_input_focus(bspwm_wid_t win)
-{
-	xcb_set_input_focus(dpy, XCB_INPUT_FOCUS_POINTER_ROOT, win, XCB_CURRENT_TIME);
-}
-
-void backend_clear_input_focus(void)
-{
-	xcb_set_input_focus(dpy, XCB_INPUT_FOCUS_POINTER_ROOT, root, XCB_CURRENT_TIME);
-}
 
 /* ------------------------------------------------------------------ */
 /*  Window properties                                                 */
@@ -438,16 +327,6 @@ bool backend_get_transient_for(bspwm_wid_t win, bspwm_wid_t *transient_for)
 	return tf != XCB_NONE;
 }
 
-bool backend_is_override_redirect(bspwm_wid_t win)
-{
-	xcb_get_window_attributes_reply_t *wa = xcb_get_window_attributes_reply(
-		dpy, xcb_get_window_attributes(dpy, win), NULL);
-	if (!wa) return false;
-	bool or_flag = wa->override_redirect;
-	free(wa);
-	return or_flag;
-}
-
 bool backend_get_urgency(bspwm_wid_t win)
 {
 	xcb_icccm_wm_hints_t hints;
@@ -455,12 +334,6 @@ bool backend_get_urgency(bspwm_wid_t win)
 		return (hints.flags & XCB_ICCCM_WM_HINT_X_URGENCY) && xcb_icccm_wm_hints_get_urgency(&hints);
 	}
 	return false;
-}
-
-void backend_set_window_state(bspwm_wid_t win, bspwm_wm_state_t state)
-{
-	uint32_t data[] = {state, XCB_NONE};
-	xcb_change_property(dpy, XCB_PROP_MODE_REPLACE, win, WM_STATE, WM_STATE, 32, 2, data);
 }
 
 /* ------------------------------------------------------------------ */
@@ -490,7 +363,7 @@ bool backend_get_window_type(bspwm_wid_t win, bspwm_window_type_t *type)
 }
 
 /* ------------------------------------------------------------------ */
-/*  EWMH / compositor state                                          */
+/*  EWMH state                                                       */
 /* ------------------------------------------------------------------ */
 
 void backend_ewmh_init(void)
@@ -504,11 +377,6 @@ void backend_ewmh_init(void)
 }
 
 /* Other EWMH functions are in ewmh.c, which uses the ewmh global directly */
-
-bool backend_ewmh_handle_struts(bspwm_wid_t win)
-{
-	return ewmh_handle_struts(win);
-}
 
 /* ------------------------------------------------------------------ */
 /*  Monitor / output discovery                                        */
@@ -586,34 +454,6 @@ void backend_listen_output_changes(void)
 /*  Input                                                             */
 /* ------------------------------------------------------------------ */
 
-void backend_pointer_init(void)
-{
-	/* Delegated to pointer.c pointer_init() */
-}
-
-void backend_query_pointer(bspwm_wid_t *win, bspwm_point_t *pos)
-{
-	xcb_query_pointer_reply_t *qpr = xcb_query_pointer_reply(dpy,
-		xcb_query_pointer(dpy, root), NULL);
-	if (!qpr) return;
-	if (win) *win = qpr->child;
-	if (pos) { pos->x = qpr->root_x; pos->y = qpr->root_y; }
-	free(qpr);
-}
-
-void backend_warp_pointer(bspwm_rect_t rect)
-{
-	int16_t cx = rect.x + rect.width / 2;
-	int16_t cy = rect.y + rect.height / 2;
-	xcb_warp_pointer(dpy, XCB_NONE, root, 0, 0, 0, 0, cx, cy);
-}
-
-void backend_allow_events(bool replay, uint32_t timestamp)
-{
-	xcb_allow_events(dpy, replay ? XCB_ALLOW_REPLAY_POINTER : XCB_ALLOW_SYNC_POINTER, timestamp);
-	xcb_flush(dpy);
-}
-
 /* ------------------------------------------------------------------ */
 /*  Client message / close                                            */
 /* ------------------------------------------------------------------ */
@@ -684,19 +524,6 @@ uint32_t backend_get_color_pixel(const char *color)
 /*  Enumerate windows                                                 */
 /* ------------------------------------------------------------------ */
 
-void backend_enumerate_windows(backend_window_visitor_t visitor)
-{
-	xcb_query_tree_reply_t *qtr = xcb_query_tree_reply(dpy,
-		xcb_query_tree(dpy, root), NULL);
-	if (!qtr) return;
-	int len = xcb_query_tree_children_length(qtr);
-	xcb_window_t *children = xcb_query_tree_children(qtr);
-	for (int i = 0; i < len; i++) {
-		visitor(children[i]);
-	}
-	free(qtr);
-}
-
 /* ------------------------------------------------------------------ */
 /*  Display name                                                      */
 /* ------------------------------------------------------------------ */
@@ -728,19 +555,6 @@ bool backend_register_root_events(void)
 /*  Presel feedback                                                   */
 /* ------------------------------------------------------------------ */
 
-bspwm_wid_t backend_create_presel_feedback(uint32_t color)
-{
-	bspwm_wid_t win = xcb_generate_id(dpy);
-	uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_SAVE_UNDER;
-	uint32_t values[] = {color, 1};
-	xcb_create_window(dpy, XCB_COPY_FROM_PARENT, win, root, 0, 0, 1, 1, 0,
-	                  XCB_WINDOW_CLASS_INPUT_OUTPUT, XCB_COPY_FROM_PARENT, mask, values);
-	xcb_icccm_set_wm_class(dpy, win, sizeof("presel_feedback\0Bspwm"), "presel_feedback\0Bspwm");
-	xcb_shape_rectangles(dpy, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_INPUT,
-	                     XCB_CLIP_ORDERING_UNSORTED, win, 0, 0, 0, NULL);
-	return win;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Atom helpers                                                      */
 /* ------------------------------------------------------------------ */
@@ -757,13 +571,6 @@ static void get_atom(char *name, xcb_atom_t *atom)
 		 * value instead of stack garbage. */
 		*atom = XCB_ATOM_NONE;
 	}
-}
-
-void backend_set_atom(bspwm_wid_t win, const char *atom_name, uint32_t value)
-{
-	xcb_atom_t atom;
-	get_atom((char *)atom_name, &atom);
-	xcb_change_property(dpy, XCB_PROP_MODE_REPLACE, win, atom, XCB_ATOM_CARDINAL, 32, 1, &value);
 }
 
 /* ------------------------------------------------------------------ */
@@ -792,41 +599,11 @@ void x11_setup_atoms(void)
 void x11_setup_randr(void)
 {
 	const xcb_query_extension_reply_t *qep = xcb_get_extension_data(dpy, &xcb_randr_id);
-	if (qep->present) {
+	if (qep != NULL && qep->present) {
 		randr = true;
 		randr_base = qep->first_event;
 		backend_listen_output_changes();
 	}
-}
-
-bool x11_try_xinerama(void)
-{
-	if (!xcb_get_extension_data(dpy, &xcb_xinerama_id)->present)
-		return false;
-
-	xcb_xinerama_is_active_reply_t *xia = xcb_xinerama_is_active_reply(dpy,
-		xcb_xinerama_is_active(dpy), NULL);
-	if (!xia || !xia->state) {
-		free(xia);
-		return false;
-	}
-	free(xia);
-
-	xcb_xinerama_query_screens_reply_t *xsq = xcb_xinerama_query_screens_reply(dpy,
-		xcb_xinerama_query_screens(dpy), NULL);
-	if (!xsq) return false;
-
-	xcb_xinerama_screen_info_t *xsi = xcb_xinerama_query_screens_screen_info(xsq);
-	int n = xcb_xinerama_query_screens_screen_info_length(xsq);
-	for (int i = 0; i < n; i++) {
-		bspwm_output_info_t out = {0};
-		out.rect = (bspwm_rect_t){xsi[i].x_org, xsi[i].y_org, xsi[i].width, xsi[i].height};
-		out.id = i + 1;
-		snprintf(out.name, sizeof(out.name), "XINERAMA-%d", i);
-		/* Use update_monitors path indirectly via make_monitor + add_monitor */
-	}
-	free(xsq);
-	return true;
 }
 
 /* ------------------------------------------------------------------ */

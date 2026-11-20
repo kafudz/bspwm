@@ -24,7 +24,7 @@ CORE_SRC = bspwm.c helpers.c geometry.c jsmn.c settings.c monitor.c desktop.c tr
 
 # X11 backend sources
 BACKEND_SRC  = backend_x11.c events.c pointer.c window.c ewmh.c magnet.c
-BACKEND_LIBS = -lxcb -lxcb-util -lxcb-keysyms -lxcb-icccm -lxcb-ewmh -lxcb-randr -lxcb-xinerama -lxcb-shape -lxkbcommon
+BACKEND_LIBS = -lxcb -lxcb-util -lxcb-keysyms -lxcb-icccm -lxcb-ewmh -lxcb-randr -lxcb-shape -lxkbcommon
 WM_BIN       = bspwm
 SESSION_FILE = contrib/freedesktop/bspwm.desktop
 SESSION_DIR  = $(XSESSIONS)

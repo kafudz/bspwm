@@ -495,7 +495,7 @@ void ensure_focused_monitor(void)
 bool update_monitors(void)
 {
 	/* `running` is false during the initial setup() call, and true for
-	 * every subsequent call (RandR/wlr hotplug events, bspc config side
+	 * every subsequent call (RandR hotplug events, bspc config side
 	 * effects). This lets the initial monitor discovery always happen
 	 * while honoring the "ignore subsequent updates" setting. */
 	if (ignore_monitor_updates && running)

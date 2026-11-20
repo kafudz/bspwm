@@ -35,24 +35,6 @@
 #include "query.h"
 #include "geometry.h"
 
-static query_buffer_t buffer_pool[4] = {0};
-
-query_buffer_t *get_query_buffer(void)
-{
-	for (int i = 0; i < 4; i++) {
-		if (!buffer_pool[i].in_use) {
-			buffer_pool[i].in_use = true;
-			return &buffer_pool[i];
-		}
-	}
-	return NULL;
-}
-
-void release_query_buffer(query_buffer_t *buf)
-{
-	if (buf) buf->in_use = false;
-}
-
 void query_state(FILE *rsp)
 {
 	if (!rsp) return;

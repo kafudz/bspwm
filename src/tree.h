@@ -65,7 +65,6 @@ node_t *prev_leaf(node_t *n, node_t *r);
 
 node_t *next_tiled_leaf(node_t *n, node_t *r);
 node_t *prev_tiled_leaf(node_t *n, node_t *r);
-bool is_adjacent(node_t *a, node_t *b, direction_t dir);
 node_t *find_fence(node_t *n, direction_t dir);
 bool is_child(node_t *a, node_t *b);
 bool is_descendant(node_t *a, node_t *b);

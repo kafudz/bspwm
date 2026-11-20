@@ -1196,25 +1196,6 @@ node_t *prev_tiled_leaf(node_t *n, node_t *r)
 	return prev_tiled_leaf(prev, r);
 }
 
-bool is_adjacent(node_t *a, node_t *b, direction_t dir)
-{
-	if (!a || !b) {
-		return false;
-	}
-
-	switch (dir) {
-		case DIR_EAST:
-			return (a->rectangle.x + a->rectangle.width) == b->rectangle.x;
-		case DIR_SOUTH:
-			return (a->rectangle.y + a->rectangle.height) == b->rectangle.y;
-		case DIR_WEST:
-			return (b->rectangle.x + b->rectangle.width) == a->rectangle.x;
-		case DIR_NORTH:
-			return (b->rectangle.y + b->rectangle.height) == a->rectangle.y;
-	}
-	return false;
-}
-
 node_t *find_fence(node_t *n, direction_t dir)
 {
 	if (!n) {

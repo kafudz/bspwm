@@ -65,3 +65,6 @@ core.*
 tests/test_jsmn
 tests/test_geometry
 tests/test_parse
+
+# Built by benches/compare_latency.sh on demand
+benches/x11_latency_bench

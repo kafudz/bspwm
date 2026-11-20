@@ -47,7 +47,6 @@ extern uint8_t randr_base;
 void x11_setup_screen(void);
 void x11_setup_atoms(void);
 void x11_setup_randr(void);
-bool x11_try_xinerama(void);
 void x11_setup_ewmh_supported(void);
 
 #endif

@@ -76,7 +76,7 @@ python3 bench.py all
   # Debian/Ubuntu
   sudo apt install libxcb-dev libxcb-util-dev libxcb-keysyms1-dev \
                    libxcb-icccm4-dev libxcb-ewmh-dev libxcb-randr0-dev \
-                   libxcb-xinerama0-dev libxcb-shape0-dev
+                   libxcb-shape0-dev
 
   # Arch Linux
   sudo pacman -S libxcb xcb-util xcb-util-keysyms xcb-util-wm

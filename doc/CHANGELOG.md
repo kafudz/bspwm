@@ -1,6 +1,24 @@
 # Unreleased
 
+### Removed
+
+Dead code (no remaining callers, verified by whole-tree reference scan):
+- 26 unused `backend_*` wrappers in `backend_x11.c` and 17 orphan `backend_*`
+  prototypes in `backend.h` that had no definition at all (left over from the
+  removed Wayland backend), plus `x11_try_xinerama()`, which was never called
+  and never produced monitors. Xinerama is no longer a build dependency
+  (`-lxcb-xinerama`); monitor discovery was already RandR-only.
+- `ewmh_init`, `update_colors`, `window_resize`, `set_atom`,
+  `send_client_message`, `is_adjacent`, and the unused `query_buffer_t` pool.
+- Committed benchmark byproducts (`x11_latency_bench` binary and two result
+  JSON files); the binary is built on demand by `compare_latency.sh` and is
+  now ignored.
+
 ### Fixed
+
+Stability:
+- The `SIGCHLD` handler now preserves `errno` across `waitpid()`.
+- `x11_setup_randr()` no longer dereferences a NULL extension reply.
 
 Protocol and IPC:
 - A raw client that shuts down its write side without sending bspc's trailing
